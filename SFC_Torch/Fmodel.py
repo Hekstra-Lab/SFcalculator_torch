@@ -362,7 +362,7 @@ class SFcalculator(object):
         '''
         Calculate the Fprotein with batched models. Most parameters are similar to `Calc_Fprotein`
 
-        atoms_positions_batch: tf.float32 tensor, [N_batch, N_atoms, 3]
+        atoms_positions_batch: torch.float32 tensor, [N_batch, N_atoms, 3]
 
         PARTITION: Int, default 20
             To reduce the memory cost during the computation, we divide the batch into several partitions and loops through them.
