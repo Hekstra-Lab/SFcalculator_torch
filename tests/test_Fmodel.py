@@ -48,14 +48,17 @@ def test_calc_Fprotein(data_pdb, data_mtz_exp, data_mtz_fmodel_ksol0, Return):
     Fprotein = sfcalculator.Calc_Fprotein(Return=Return)
     Fcalc = rs.read_mtz(data_mtz_fmodel_ksol0)
     assert (Fcalc.get_hkls() == sfcalculator.HKL_array).all()
-    
+
     if Return:
         Fprotein_arr = Fprotein.cpu().numpy()
-        assert pearsonr(np.abs(Fprotein_arr), Fcalc['FMODEL'].to_numpy()).statistic > 0.99
+        assert pearsonr(np.abs(Fprotein_arr),
+                        Fcalc['FMODEL'].to_numpy()).statistic > 0.99
     else:
         assert Fprotein is None
         Fprotein_arr = sfcalculator.Fprotein_HKL.cpu().numpy()
-        assert pearsonr(np.abs(Fprotein_arr), Fcalc['FMODEL'].to_numpy()).statistic > 0.99
+        assert pearsonr(np.abs(Fprotein_arr),
+                        Fcalc['FMODEL'].to_numpy()).statistic > 0.99
+
 
 @pytest.mark.parametrize("Return", [True, False])
 def test_calc_Fsolvent(data_pdb, data_mtz_exp, data_mtz_fmodel_ksol0, data_mtz_fmodel_ksol1, Return):
@@ -63,28 +66,31 @@ def test_calc_Fsolvent(data_pdb, data_mtz_exp, data_mtz_fmodel_ksol0, data_mtz_f
         data_pdb, mtzfile_dir=data_mtz_exp, set_experiment=True)
     sfcalculator.inspect_data()
     sfcalculator.Calc_Fprotein(Return=False)
-    Fsolvent = sfcalculator.Calc_Fsolvent(dmin_mask=6.0, dmin_nonzero=3.0, Return=Return)
-    
+    Fsolvent = sfcalculator.Calc_Fsolvent(
+        dmin_mask=6.0, dmin_nonzero=3.0, Return=Return)
+
     Fcalc = rs.read_mtz(data_mtz_fmodel_ksol0)
-    Fmodel=rs.read_mtz(data_mtz_fmodel_ksol1)
+    Fmodel = rs.read_mtz(data_mtz_fmodel_ksol1)
     assert (Fmodel.get_hkls() == sfcalculator.HKL_array).all()
 
     calc_mag = Fcalc['FMODEL'].to_numpy()
     calc_ph = np.deg2rad(Fcalc['PHIFMODEL'].to_numpy())
-    Fcalc_complex = np.array([complex(mag*np.cos(ph), mag*np.sin(ph)) 
-                                for mag, ph in zip(calc_mag,calc_ph)])
-    
+    Fcalc_complex = np.array([complex(mag*np.cos(ph), mag*np.sin(ph))
+                              for mag, ph in zip(calc_mag, calc_ph)])
+
     model_mag = Fmodel['FMODEL'].to_numpy()
     model_ph = np.deg2rad(Fmodel['PHIFMODEL'].to_numpy())
-    Fmodel_complex = np.array([complex(mag*np.cos(ph), mag*np.sin(ph)) 
-                                for mag, ph in zip(model_mag,model_ph)])
+    Fmodel_complex = np.array([complex(mag*np.cos(ph), mag*np.sin(ph))
+                               for mag, ph in zip(model_mag, model_ph)])
 
     Fmask_complex = Fmodel_complex - Fcalc_complex
 
     if Return:
         Fsolvent_arr = Fsolvent.cpu().numpy()
-        assert pearsonr(np.abs(Fsolvent_arr), np.abs(Fmask_complex)).statistic > 0.95
+        assert pearsonr(np.abs(Fsolvent_arr), np.abs(
+            Fmask_complex)).statistic > 0.95
     else:
         assert Fsolvent is None
         Fsolvent_arr = sfcalculator.Fmask_HKL.cpu().numpy()
-        assert pearsonr(np.abs(Fsolvent_arr), np.abs(Fmask_complex)).statistic > 0.95 
+        assert pearsonr(np.abs(Fsolvent_arr), np.abs(
+            Fmask_complex)).statistic > 0.95
