@@ -21,6 +21,6 @@ def data_mtz_fmodel_ksol0():
 
 @pytest.fixture
 def data_mtz_fmodel_ksol1():
-    datapath = "data/4xof_ksol1.pdb"
+    datapath = "data/4xof_ksol1.mtz"
     filename = abspath(join(dirname(__file__), datapath))
     return filename
