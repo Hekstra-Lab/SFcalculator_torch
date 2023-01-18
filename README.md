@@ -1,5 +1,6 @@
 # SFcalculator_torch
 ![Build](https://github.com/Hekstra-Lab/SFcalculator_torch/workflows/Build/badge.svg)
+[![codecov](https://codecov.io/github/Hekstra-Lab/SFcalculator_torch/branch/master/graph/badge.svg?token=02GUPGPUC1)](https://codecov.io/github/Hekstra-Lab/SFcalculator_torch)
 
 A pytorch implementation of [`SFcalculator`](https://github.com/Hekstra-Lab/SFcalculator). See the main page for more information.
 
