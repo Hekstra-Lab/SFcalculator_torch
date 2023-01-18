@@ -1,4 +1,3 @@
-from zmq import device
 import torch
 import numpy as np
 import gemmi
