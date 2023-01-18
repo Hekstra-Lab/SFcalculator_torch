@@ -23,4 +23,6 @@ setup(name="SFcalculator_torch",
         "gemmi>=0.5.6",
         "reciprocalspaceship>=0.9.18",
     ],
+    setup_requires=["pytest-runner"],
+    tests_require=["pytest", "pytest-cov"],
 )
