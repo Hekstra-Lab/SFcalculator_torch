@@ -119,6 +119,7 @@ def test_calc_Ftotal(data_pdb, data_mtz_exp, case):
         Ftotal = sfcalculator.Calc_Ftotal()
         assert len(Ftotal) == 10239
 
+
 @pytest.mark.parametrize("partition_size", [1, 4, 5, 20])
 def test_calc_Fprotein_batch(data_pdb, data_mtz_exp, partition_size):
     sfcalculator = SFcalculator(
@@ -128,12 +129,13 @@ def test_calc_Fprotein_batch(data_pdb, data_mtz_exp, partition_size):
     atoms_pos_batch = torch.tile(sfcalculator.atom_pos_orth, [10, 1, 1])
     Fprotein_batch = sfcalculator.Calc_Fprotein_batch(
         atoms_pos_batch, Return=True, PARTITION=partition_size)
-    
+
     assert len(Fprotein_batch) == 10
     assert np.all(np.isclose(Fprotein_batch[5].cpu().numpy(
     ), Fprotein.cpu().numpy(), rtol=1e-5, atol=5e-3))
     assert np.all(np.isclose(sfcalculator.Fprotein_asu_batch[5].cpu().numpy(
     ), sfcalculator.Fprotein_asu.cpu().numpy(), rtol=1e-5, atol=5e-3))
+
 
 @pytest.mark.parametrize("partition_size", [1, 4, 5, 20])
 def test_calc_Fsolvent_batch(data_pdb, data_mtz_exp, partition_size):
@@ -145,7 +147,8 @@ def test_calc_Fsolvent_batch(data_pdb, data_mtz_exp, partition_size):
         dmin_mask=6.0, dmin_nonzero=3.0, Return=True)
 
     atoms_pos_batch = torch.tile(sfcalculator.atom_pos_orth, [10, 1, 1])
-    sfcalculator.Calc_Fprotein_batch(atoms_pos_batch, Return=False, PARTITION=partition_size)
+    sfcalculator.Calc_Fprotein_batch(
+        atoms_pos_batch, Return=False, PARTITION=partition_size)
     Fsolvent_batch = sfcalculator.Calc_Fsolvent_batch(
         dmin_mask=6.0, dmin_nonzero=3.0, Return=True, PARTITION=partition_size)
 
