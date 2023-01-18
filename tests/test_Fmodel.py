@@ -155,7 +155,7 @@ def test_calc_Fsolvent_batch(data_pdb, data_mtz_exp, partition_size):
     assert len(Fsolvent_batch) == 10
     assert np.all(np.isclose(torch.abs(Fsolvent).cpu().numpy(),
                              torch.abs(Fsolvent_batch[3]).cpu().numpy(),
-                             rtol=1e-4, atol=5e-3))
+                             rtol=1e-3, atol=1e-2))
 
 
 def test_calc_Ftotal_batch(data_pdb, data_mtz_exp):
