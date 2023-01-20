@@ -43,9 +43,10 @@ def test_inspect_data_nomtz(data_pdb):
 
 
 @pytest.mark.parametrize("Return", [True, False])
-def test_calc_Fprotein(data_pdb, data_mtz_exp, data_mtz_fmodel_ksol0, Return):
+@pytest.mark.parametrize("Anomalous", [True, False])
+def test_calc_Fprotein(data_pdb, data_mtz_exp, data_mtz_fmodel_ksol0, Return, Anomalous):
     sfcalculator = SFcalculator(
-        data_pdb, mtzfile_dir=data_mtz_exp, set_experiment=True)
+        data_pdb, mtzfile_dir=data_mtz_exp, set_experiment=True, anoma_scattering=Anomalous)
     sfcalculator.inspect_data()
     Fprotein = sfcalculator.Calc_Fprotein(Return=Return)
     Fcalc = rs.read_mtz(data_mtz_fmodel_ksol0)
@@ -72,9 +73,10 @@ def test_calc_Fprotein(data_pdb, data_mtz_exp, data_mtz_fmodel_ksol0, Return):
 
 
 @pytest.mark.parametrize("Return", [True, False])
-def test_calc_Fsolvent(data_pdb, data_mtz_exp, data_mtz_fmodel_ksol0, data_mtz_fmodel_ksol1, Return):
+@pytest.mark.parametrize("Anomalous", [True, False])
+def test_calc_Fsolvent(data_pdb, data_mtz_exp, data_mtz_fmodel_ksol0, data_mtz_fmodel_ksol1, Return, Anomalous):
     sfcalculator = SFcalculator(
-        data_pdb, mtzfile_dir=data_mtz_exp, set_experiment=True)
+        data_pdb, mtzfile_dir=data_mtz_exp, set_experiment=True, anoma_scattering=Anomalous)
     sfcalculator.inspect_data()
     sfcalculator.Calc_Fprotein(Return=False)
     Fsolvent = sfcalculator.Calc_Fsolvent(
@@ -138,9 +140,10 @@ def test_calc_Ftotal(data_pdb, data_mtz_exp, case):
 
 
 @pytest.mark.parametrize("partition_size", [1, 4, 5, 20])
-def test_calc_Fprotein_batch(data_pdb, data_mtz_exp, partition_size):
+@pytest.mark.parametrize("Anomalous", [True, False])
+def test_calc_Fprotein_batch(data_pdb, data_mtz_exp, partition_size, Anomalous):
     sfcalculator = SFcalculator(
-        data_pdb, mtzfile_dir=data_mtz_exp, set_experiment=True)
+        data_pdb, mtzfile_dir=data_mtz_exp, set_experiment=True, anoma_scattering=Anomalous)
     sfcalculator.inspect_data()
     Fprotein = sfcalculator.Calc_Fprotein(Return=True)
     atoms_pos_batch = torch.tile(sfcalculator.atom_pos_orth, [10, 1, 1])
@@ -148,10 +151,12 @@ def test_calc_Fprotein_batch(data_pdb, data_mtz_exp, partition_size):
         atoms_pos_batch, Return=True, PARTITION=partition_size)
 
     assert len(Fprotein_batch) == 10
-    assert np.all(np.isclose(Fprotein_batch[5].cpu().numpy(
-    ), Fprotein.cpu().numpy(), rtol=1e-5, atol=5e-3))
-    assert np.all(np.isclose(sfcalculator.Fprotein_asu_batch[5].cpu().numpy(
-    ), sfcalculator.Fprotein_asu.cpu().numpy(), rtol=1e-5, atol=5e-3))
+    assert np.all(np.isclose(Fprotein_batch[5].cpu().numpy(), 
+                             Fprotein.cpu().numpy(), 
+                             rtol=1e-5, atol=5e-3))
+    assert np.all(np.isclose(sfcalculator.Fprotein_asu_batch[5].cpu().numpy(), 
+                             sfcalculator.Fprotein_asu.cpu().numpy(), 
+                             rtol=1e-5, atol=5e-3))
 
 
 @pytest.mark.parametrize("partition_size", [1, 4, 5, 20])

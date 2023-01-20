@@ -31,6 +31,8 @@ class SFcalculator(object):
     def __init__(self, PDBfile_dir,
                  mtzfile_dir=None,
                  dmin=None,
+                 anoma_scattering=False,
+                 wavelength=None,
                  set_experiment=True,
                  nansubset=['FP', 'SIGFP'],
                  freeflag='FreeR_flag',
@@ -62,7 +64,21 @@ class SFcalculator(object):
         self.space_group = gemmi.SpaceGroup(
             structure.spacegroup_hm)  # gemmi.SpaceGroup object
         self.operations = self.space_group.operations()  # gemmi.GroupOps object
+        self.wavelength = wavelength
+
+        if anoma_scattering:
+            # Try to get the wavelength from PDB remarks
+            try:
+                line_index = np.argwhere(["WAVELENGTH OR RANGE" in i for i in structure.raw_remarks])
+                pdb_wavelength = eval(structure.raw_remarks[line_index[0,0]].split()[-1])
+                if wavelength is not None:
+                    assert np.isclose(pdb_wavelength, wavelength, atol=0.05)
+                else:
+                    self.wavelength = pdb_wavelength
+            except:
+                print("Can't find wavelength record in the PDB file, or it doesn't match your input wavelength!")
         
+            
         self.R_G_tensor_stack = torch.tensor(np.array([
             np.array(sym_op.rot)/sym_op.DEN for sym_op in self.operations]), device=try_gpu()).type(torch.float32)
         self.T_G_tensor_stack = torch.tensor(np.array([
@@ -89,6 +105,17 @@ class SFcalculator(object):
             except:
                 raise ValueError(
                     f"{nansubset} columns not included in the mtz file!")
+            if anoma_scattering:
+                # Try to get the wavelength from MTZ file
+                try:
+                    mtz_wavelength = mtz_reference.dataset(0).wavelength
+                    assert mtz_wavelength > 0.05
+                    if self.wavelength is not None:
+                        assert np.isclose(mtz_wavelength, self.wavelength, atol=0.05)
+                    else:
+                        self.wavelength = mtz_wavelength
+                except:
+                    print("Can't find wavelength record in the MTZ file, or it doesn't match with other sources")
             # HKL array from the reference mtz file, [N,3]
             self.HKL_array = mtz_reference.get_hkls()
             self.dHKL = self.unit_cell.calculate_d_array(self.HKL_array).astype("float32")
@@ -99,7 +126,6 @@ class SFcalculator(object):
                 self.unit_cell, self.space_group, self.dmin)
             assert diff_array(self.HKL_array, self.Hasu_array) == set(
             ), "HKL_array should be equal or subset of the Hasu_array!"
-            # TODO: See if need to change to tensor
             self.asu2HKL_index = asu2HKL(self.Hasu_array, self.HKL_array) 
             # d*^2 array according to the HKL list, [N]
             self.dr2asu_array = self.unit_cell.calculate_1_d2_array(
@@ -160,13 +186,25 @@ class SFcalculator(object):
 
         # A dictionary of atomic structural factor f0_sj of different atom types at different HKL Rupp's Book P280
         # f0_sj = [sum_{i=1}^4 {a_ij*exp(-b_ij* d*^2/4)} ] + c_j
+        if anoma_scattering:
+            assert self.wavelength is not None, ValueError("If you need anomalous scattering contribution, provide the wavelength info from input, pbd or mtz file!")
+
         self.full_atomic_sf_asu = {}
         for atom_type in self.unique_atom:
             element = gemmi.Element(atom_type)
-            self.full_atomic_sf_asu[atom_type] = np.array([
-                element.it92.calculate_sf(dr2/4.) for dr2 in self.dr2asu_array])
-        self.fullsf_tensor = torch.tensor(np.array([
-            self.full_atomic_sf_asu[atom] for atom in self.atom_name]), device=try_gpu()).type(torch.float32)
+            f0 = np.array([element.it92.calculate_sf(dr2/4.) for dr2 in self.dr2asu_array])
+            if anoma_scattering:
+                fp, fpp = gemmi.cromer_liberman(z=element.atomic_number, energy=gemmi.hc/self.wavelength)
+                self.full_atomic_sf_asu[atom_type] = f0 + fp + 1j*fpp
+            else:
+                self.full_atomic_sf_asu[atom_type] = f0
+
+        if anoma_scattering:
+            self.fullsf_tensor = torch.tensor(np.array([
+                self.full_atomic_sf_asu[atom] for atom in self.atom_name]), device=try_gpu()).type(torch.complex64)
+        else:
+            self.fullsf_tensor = torch.tensor(np.array([
+                self.full_atomic_sf_asu[atom] for atom in self.atom_name]), device=try_gpu()).type(torch.float32)
         self.inspected = False
 
     def set_experiment(self, exp_mtz, freeflag='FreeR_flag', testset_value=0):
@@ -530,16 +568,12 @@ def F_protein(HKL_array, dr2_array, fullsf_tensor, reciprocal_cell_paras,
     # Vectorized phase calculation
     sym_oped_pos_frac = torch.permute(torch.tensordot(R_G_tensor_stack,
         atom_pos_frac.T, 1), [2, 0, 1]) + T_G_tensor_stack  # Shape [N_atom, N_op, N_dim=3]
-    cos_phase = 0.
-    sin_phase = 0.
+    exp_phase = 0.
     # Loop through symmetry operations instead of fully vectorization, to reduce the memory cost
     for i in range(sym_oped_pos_frac.size(dim=1)):
         phase_G = 2*np.pi*torch.tensordot(HKL_tensor,sym_oped_pos_frac[:, i, :].T, 1)
-        cos_phase += torch.cos(phase_G)
-        sin_phase += torch.sin(phase_G)  # Shape [N_HKLs, N_atoms]
-    # Calcualte the complex structural factor 
-    F_calc = torch.complex(torch.sum(cos_phase*magnitude.T, dim=-1),
-                           torch.sum(sin_phase*magnitude.T, dim=-1))
+        exp_phase = exp_phase + torch.exp(1j*phase_G)
+    F_calc = torch.sum(exp_phase*magnitude.T, dim=-1)
     return F_calc
 
 
@@ -593,10 +627,10 @@ def F_protein_batch(HKL_array, dr2_array, fullsf_tensor, reciprocal_cell_paras,
         end = min((j+1)*PARTITION, batchsize)
         for i in range(N_ops):  # Loop through symmetry operations to reduce memory cost
             phase_ij = 2 * torch.pi * torch.tensordot(sym_oped_pos_frac[start:end, :, :, i], HKL_tensor.T, 1)  # Shape [PARTITION, N_atoms, N_HKLs]
-            Fcalc_ij = torch.complex(torch.sum(torch.cos(phase_ij)*magnitude, dim=1),
-                                     torch.sum(torch.sin(phase_ij)*magnitude, dim=1))  # Shape [PARTITION, N_HKLs], sum over atoms
+            exp_phase_ij = torch.exp(1j*phase_ij)
+            Fcalc_ij = torch.sum(exp_phase_ij*magnitude, dim=1) # Shape [PARTITION, N_HKLs], sum over atoms
             # Shape [PARTITION, N_HKLs], sum over symmetry operations
-            Fcalc_j += Fcalc_ij
+            Fcalc_j = Fcalc_j + Fcalc_ij
         if j == 0:
             F_calc = Fcalc_j
         else:
