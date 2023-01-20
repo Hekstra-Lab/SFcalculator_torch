@@ -439,13 +439,16 @@ class SFcalculator(object):
             else:
                 # Shape [N_batches, N_HKLs]
                 Fmask_batch = torch.concat((Fmask_batch, Fmask_batch_j), dim=0) #type: ignore
-        zero_hkl_bool = torch.tensor(self.dHKL <= dmin_nonzero, device=try_gpu())
-        Fmask_batch[:, zero_hkl_bool] = torch.tensor(0., device=try_gpu(), dtype=torch.complex64) #type: ignore
+
         if not self.HKL_array is None:
+            zero_hkl_bool = torch.tensor(self.dHKL <= dmin_nonzero, device=try_gpu())
+            Fmask_batch[:, zero_hkl_bool] = torch.tensor(0., device=try_gpu(), dtype=torch.complex64) #type: ignore
             self.Fmask_HKL_batch = Fmask_batch
             if Return:
                 return self.Fmask_HKL_batch
         else:
+            zero_hkl_bool = torch.tensor(self.dHasu <= dmin_nonzero, device=try_gpu())
+            Fmask_batch[:, zero_hkl_bool] = torch.tensor(0., device=try_gpu(), dtype=torch.complex64) #type: ignore
             self.Fmask_asu_batch = Fmask_batch
             if Return:
                 return self.Fmask_asu_batch
