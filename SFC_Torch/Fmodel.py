@@ -3,7 +3,8 @@ Calculate Structural Factor from an atomic model: F_model = k_total * (F_calc + 
 
 Note:
 1. We use direct summation for the F_calc
-2. Now we only include f_0, no f' or f'', so no anomalous scattering
+2. We support anomalous scattering with cromer_liberman equation
+3. We use a bulk solvent masking 
 
 Written in PyTorch
 '''
@@ -51,8 +52,14 @@ class SFcalculator(object):
 
         dmin: float, default None
             highest resolution in the map in Angstrom, to generate Miller indices in recirpocal ASU
+        
+        anoma_scattering: Boolean, default False
+            Whether or not to include anomalous scattering in the calculation
+        
+        wavelength: None or float
+            The wavelength of scattering source in A
 
-        set_experiment: Boolean, Default True
+        set_experiment: Boolean, default True
             Whether or not to set Fo and SigF, r_free, r_work from the experimental mtz file. It only works when
             the mtzfile_dir is not None
 
