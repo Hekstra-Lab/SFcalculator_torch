@@ -29,7 +29,7 @@ asu_cases = {
     9: lambda h, k, l: (k >= l) & (l >= h) & (h >= 0),
 }
 
-def expand_to_p1(spacegroup, Hasu_array, Fasu_tensor, dmin_mask=6.0, Batch=False, unitcell=None):
+def expand_to_p1(spacegroup, Hasu_array, Fasu_tensor, Batch=False, dmin_mask=6.0, unitcell=None, anomalous=False):
     '''
     Expand the reciprocal ASU array to a complete p1 unit cell, with phase shift on the Complex Structure Factor
     In a fully differentiable manner (to Fasu_tensor), with tensorflow
@@ -52,6 +52,9 @@ def expand_to_p1(spacegroup, Hasu_array, Fasu_tensor, dmin_mask=6.0, Batch=False
 
     dmin_mask: np.float32, Default 6 angstroms.
         Minimum resolution cutoff, in angstroms, for creating the solvent mask
+
+    anomalous: Boolean, Default False
+        If the anomalous scattering is included in the calculation
 
     Return:
     -------
@@ -110,17 +113,19 @@ def expand_to_p1(spacegroup, Hasu_array, Fasu_tensor, dmin_mask=6.0, Batch=False
         ds = pd.concat([ds, ds_temp])
         Fp1_tensor = torch.concat((Fp1_tensor, Fcalc_temp), dim=concat_axis)
 
-    # Friedel Pair
-    ds_friedel = ds.copy()
-    ds_friedel["H"] = -ds_friedel["H"]
-    ds_friedel["K"] = -ds_friedel["K"]
-    ds_friedel["L"] = -ds_friedel["L"]
-    ds_friedel["index"] = ds_friedel["index"] + len(ds)
-    F_friedel_tensor = torch.conj(Fp1_tensor)
+    if not anomalous:
+        # Friedel Pair
+        ds_friedel = ds.copy()
+        ds_friedel["H"] = -ds_friedel["H"]
+        ds_friedel["K"] = -ds_friedel["K"]
+        ds_friedel["L"] = -ds_friedel["L"]
+        ds_friedel["index"] = ds_friedel["index"] + len(ds)
+        # TODO: Need to modify for anomalous scattering
+        F_friedel_tensor = torch.conj(Fp1_tensor)
 
-    # Combine
-    ds = pd.concat([ds, ds_friedel])
-    Fp1_tensor = torch.concat((Fp1_tensor, F_friedel_tensor), dim=concat_axis)
+        # Combine
+        ds = pd.concat([ds, ds_friedel])
+        Fp1_tensor = torch.concat((Fp1_tensor, F_friedel_tensor), dim=concat_axis)
 
     ds = ds.drop_duplicates(subset=["H", "K", "L"])
 

@@ -32,7 +32,7 @@ class SFcalculator(object):
     def __init__(self, PDBfile_dir,
                  mtzfile_dir=None,
                  dmin=None,
-                 anoma_scattering=False,
+                 anomalous=False,
                  wavelength=None,
                  set_experiment=True,
                  nansubset=['FP', 'SIGFP'],
@@ -53,7 +53,7 @@ class SFcalculator(object):
         dmin: float, default None
             highest resolution in the map in Angstrom, to generate Miller indices in recirpocal ASU
         
-        anoma_scattering: Boolean, default False
+        anomalous: Boolean, default False
             Whether or not to include anomalous scattering in the calculation
         
         wavelength: None or float
@@ -72,8 +72,9 @@ class SFcalculator(object):
             structure.spacegroup_hm)  # gemmi.SpaceGroup object
         self.operations = self.space_group.operations()  # gemmi.GroupOps object
         self.wavelength = wavelength
+        self.anomalous = anomalous
 
-        if anoma_scattering:
+        if anomalous:
             # Try to get the wavelength from PDB remarks
             try:
                 line_index = np.argwhere(["WAVELENGTH OR RANGE" in i for i in structure.raw_remarks])
@@ -112,7 +113,7 @@ class SFcalculator(object):
             except:
                 raise ValueError(
                     f"{nansubset} columns not included in the mtz file!")
-            if anoma_scattering:
+            if anomalous:
                 # Try to get the wavelength from MTZ file
                 try:
                     mtz_wavelength = mtz_reference.dataset(0).wavelength
@@ -130,7 +131,7 @@ class SFcalculator(object):
             assert mtz_reference.cell == self.unit_cell, "Unit cell from mtz file does not match that in PDB file!"
             assert mtz_reference.spacegroup.hm == self.space_group.hm, "Space group from mtz file does not match that in PDB file!" #type: ignore
             self.Hasu_array = generate_reciprocal_asu(
-                self.unit_cell, self.space_group, self.dmin)
+                self.unit_cell, self.space_group, self.dmin, anomalous=anomalous)
             assert diff_array(self.HKL_array, self.Hasu_array) == set(
             ), "HKL_array should be equal or subset of the Hasu_array!"
             self.asu2HKL_index = asu2HKL(self.Hasu_array, self.HKL_array) 
@@ -193,20 +194,20 @@ class SFcalculator(object):
 
         # A dictionary of atomic structural factor f0_sj of different atom types at different HKL Rupp's Book P280
         # f0_sj = [sum_{i=1}^4 {a_ij*exp(-b_ij* d*^2/4)} ] + c_j
-        if anoma_scattering:
+        if anomalous:
             assert self.wavelength is not None, ValueError("If you need anomalous scattering contribution, provide the wavelength info from input, pbd or mtz file!")
 
         self.full_atomic_sf_asu = {}
         for atom_type in self.unique_atom:
             element = gemmi.Element(atom_type)
             f0 = np.array([element.it92.calculate_sf(dr2/4.) for dr2 in self.dr2asu_array])
-            if anoma_scattering:
+            if anomalous:
                 fp, fpp = gemmi.cromer_liberman(z=element.atomic_number, energy=gemmi.hc/self.wavelength)
                 self.full_atomic_sf_asu[atom_type] = f0 + fp + 1j*fpp
             else:
                 self.full_atomic_sf_asu[atom_type] = f0
 
-        if anoma_scattering:
+        if anomalous:
             self.fullsf_tensor = torch.tensor(np.array([
                 self.full_atomic_sf_asu[atom] for atom in self.atom_name]), device=try_gpu()).type(torch.complex64)
         else:
@@ -363,7 +364,7 @@ class SFcalculator(object):
         # Shape [N_HKL_p1, 3], [N_HKL_p1,]
         Hp1_array, Fp1_tensor = expand_to_p1(
             self.space_group, self.Hasu_array, self.Fprotein_asu,
-            dmin_mask=dmin_mask, unitcell=self.unit_cell)
+            dmin_mask=dmin_mask, unitcell=self.unit_cell, anomalous=self.anomalous)
         rs_grid = reciprocal_grid(Hp1_array, Fp1_tensor, gridsize)
         self.real_grid_mask = rsgrid2realmask(
             rs_grid, solvent_percent=solventpct) #type: ignore
