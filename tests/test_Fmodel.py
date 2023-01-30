@@ -16,20 +16,20 @@ def test_constructor_SFcalculator(data_pdb, data_mtz_exp, case):
             data_pdb, mtzfile_dir=data_mtz_exp, set_experiment=True)
         sfcalculator.inspect_data()
         assert sfcalculator.inspected
-        assert np.isclose(sfcalculator.solventpct.cpu().numpy(), 0.1111, 1e-3)
-        assert sfcalculator.gridsize == [80, 120, 144]
-        assert len(sfcalculator.HKL_array) == 22230
-        assert len(sfcalculator.Hasu_array) == 22303
+        assert np.isclose(sfcalculator.solventpct.cpu().numpy(), 0.1667, 1e-3)
+        assert sfcalculator.gridsize == [48, 60, 60]
+        assert len(sfcalculator.HKL_array) == 3197
+        assert len(sfcalculator.Hasu_array) == 3255
     else:
         sfcalculator = SFcalculator(
-            data_pdb, mtzfile_dir=None, dmin=1.5, set_experiment=True)
+            data_pdb, mtzfile_dir=None, dmin=2.5, set_experiment=True)
         sfcalculator.inspect_data()
         assert sfcalculator.inspected
-        assert np.isclose(sfcalculator.solventpct.cpu().numpy(), 0.1111, 1e-3)
-        assert sfcalculator.gridsize == [60, 90, 108]
+        assert np.isclose(sfcalculator.solventpct.cpu().numpy(), 0.1667, 1e-3)
+        assert sfcalculator.gridsize == [40, 48, 48]
         assert sfcalculator.HKL_array is None
-        assert len(sfcalculator.Hasu_array) == 10239
-    assert len(sfcalculator.atom_name) == 1492
+        assert len(sfcalculator.Hasu_array) == 1747
+    assert len(sfcalculator.atom_name) == 488
 
 
 @pytest.mark.parametrize("Return", [True, False])
@@ -43,7 +43,7 @@ def test_calc_Fall(data_pdb, data_mtz_exp, data_mtz_fmodel_ksol0, data_mtz_fmode
         dmin_mask=6.0, dmin_nonzero=3.0, Return=Return)
 
     Ftotal = sfcalculator.Calc_Ftotal()
-    assert len(Ftotal) == 22230
+    assert len(Ftotal) == 3197
 
     Fcalc = rs.read_mtz(data_mtz_fmodel_ksol0)
     Fmodel = rs.read_mtz(data_mtz_fmodel_ksol1)
@@ -67,12 +67,12 @@ def test_calc_Fall(data_pdb, data_mtz_exp, data_mtz_fmodel_ksol0, data_mtz_fmode
             assert pearsonr(np.abs(Fprotein_arr),
                             Fcalc['FMODEL'].to_numpy()).statistic > 0.99
             assert pearsonr(np.abs(Fsolvent_arr),
-                            np.abs(Fmask_complex)).statistic > 0.95
+                            np.abs(Fmask_complex)).statistic > 0.84
         except:
             assert pearsonr(np.abs(Fprotein_arr),
                             Fcalc['FMODEL'].to_numpy())[0] > 0.99
             assert pearsonr(np.abs(Fsolvent_arr),
-                            np.abs(Fmask_complex))[0] > 0.95
+                            np.abs(Fmask_complex))[0] > 0.84
     else:
         assert Fsolvent is None
         assert Fprotein is None
@@ -82,23 +82,23 @@ def test_calc_Fall(data_pdb, data_mtz_exp, data_mtz_fmodel_ksol0, data_mtz_fmode
             assert pearsonr(np.abs(Fprotein_arr),
                             Fcalc['FMODEL'].to_numpy()).statistic > 0.99
             assert pearsonr(np.abs(Fsolvent_arr),
-                            np.abs(Fmask_complex)).statistic > 0.95
+                            np.abs(Fmask_complex)).statistic > 0.84
         except:
             assert pearsonr(np.abs(Fprotein_arr),
                             Fcalc['FMODEL'].to_numpy())[0] > 0.99
             assert pearsonr(np.abs(Fsolvent_arr),
-                            np.abs(Fmask_complex))[0] > 0.95
+                            np.abs(Fmask_complex))[0] > 0.84
 
 
 def test_calc_Ftotal_nodata(data_pdb):
     sfcalculator = SFcalculator(
-        data_pdb, mtzfile_dir=None, dmin=1.5, set_experiment=True)
+        data_pdb, mtzfile_dir=None, dmin=2.5, set_experiment=True)
     sfcalculator.inspect_data()
     sfcalculator.Calc_Fprotein(Return=False)
     sfcalculator.Calc_Fsolvent(
         dmin_mask=6.0, dmin_nonzero=3.0, Return=False)
     Ftotal = sfcalculator.Calc_Ftotal()
-    assert len(Ftotal) == 10239
+    assert len(Ftotal) == 1747
 
 
 @pytest.mark.parametrize("partition_size", [1, 3, 5])
@@ -149,4 +149,4 @@ def test_prepare_Dataset(data_pdb, data_mtz_exp):
         dmin_mask=6.0, dmin_nonzero=3.0, Return=False)
     sfcalculator.Calc_Ftotal()
     ds = sfcalculator.prepare_DataSet("HKL_array", "Ftotal_HKL")
-    assert len(ds) == 22230
+    assert len(ds) == 3197

@@ -55,7 +55,10 @@ def test_voxel_1dto3d(data_pdb, data_mtz_exp):
     voxel_map_p1 = voxelvalue_torch_p1(uc_grid_orth_tensor, sfcalculator.atom_pos_orth,
                                        sfcalculator.unit_cell, sfcalculator.space_group, vdw_rad,
                                        s=steepness, binary=True, cutoff=CUTOFF)
-    na, nb, nc = 6, 9, 11
+    a, b, c, _, _, _ = sfcalculator.unit_cell.parameters
+    na = int(a/4.5)
+    nb = int(b/4.5)
+    nc = int(c/4.5)
     map_1 = voxel_1dto3d_np(voxel_map_p1.cpu().numpy(), na, nb, nc)
     map_2 = voxel_1dto3d_torch(voxel_map_p1, na, nb, nc).cpu().numpy()
     assert np.all(map_1 == map_2)
