@@ -2,6 +2,16 @@ import torch
 import numpy as np
 import gemmi
 
+__all__ = [
+    "r_factor",
+    "diff_array",
+    "try_gpu",
+    "unitcell_grid_center",
+    "vdw_distance_matrix",
+    "vdw_rad_tensor",
+    "nonH_index",
+]
+
 def r_factor(Fo, Fmodel, rwork_id, rfree_id):
     '''
     A function to calculate R_work and R_free
