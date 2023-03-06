@@ -34,15 +34,15 @@ def test_constructor_SFcalculator(data_pdb, data_mtz_exp, case):
 
 @pytest.mark.parametrize("Return", [True, False])
 @pytest.mark.parametrize("Anomalous", [True, False])
-def test_calc_Fall(data_pdb, data_mtz_exp, data_mtz_fmodel_ksol0, data_mtz_fmodel_ksol1, Return, Anomalous):
+def test_calc_fall(data_pdb, data_mtz_exp, data_mtz_fmodel_ksol0, data_mtz_fmodel_ksol1, Return, Anomalous):
     sfcalculator = SFcalculator(
         data_pdb, mtzfile_dir=data_mtz_exp, set_experiment=True, anomalous=Anomalous)
     sfcalculator.inspect_data()
-    Fprotein = sfcalculator.Calc_Fprotein(Return=Return)
-    Fsolvent = sfcalculator.Calc_Fsolvent(
+    Fprotein = sfcalculator.calc_fprotein(Return=Return)
+    Fsolvent = sfcalculator.calc_fsolvent(
         dmin_mask=6.0, dmin_nonzero=3.0, Return=Return)
 
-    Ftotal = sfcalculator.Calc_Ftotal()
+    Ftotal = sfcalculator.calc_ftotal()
     assert len(Ftotal) == 3197
 
     Fcalc = rs.read_mtz(data_mtz_fmodel_ksol0)
@@ -90,36 +90,36 @@ def test_calc_Fall(data_pdb, data_mtz_exp, data_mtz_fmodel_ksol0, data_mtz_fmode
                             np.abs(Fmask_complex))[0] > 0.84
 
 
-def test_calc_Ftotal_nodata(data_pdb):
+def test_calc_ftotal_nodata(data_pdb):
     sfcalculator = SFcalculator(
         data_pdb, mtzfile_dir=None, dmin=2.5, set_experiment=True)
     sfcalculator.inspect_data()
-    sfcalculator.Calc_Fprotein(Return=False)
-    sfcalculator.Calc_Fsolvent(
+    sfcalculator.calc_fprotein(Return=False)
+    sfcalculator.calc_fsolvent(
         dmin_mask=6.0, dmin_nonzero=3.0, Return=False)
-    Ftotal = sfcalculator.Calc_Ftotal()
+    Ftotal = sfcalculator.calc_ftotal()
     assert len(Ftotal) == 1747
 
 
 @pytest.mark.parametrize("partition_size", [1, 3, 5])
 @pytest.mark.parametrize("Anomalous", [True, False])
-def test_calc_Fall_batch(data_pdb, data_mtz_exp, Anomalous, partition_size):
+def test_calc_fall_batch(data_pdb, data_mtz_exp, Anomalous, partition_size):
     sfcalculator = SFcalculator(
         data_pdb, mtzfile_dir=data_mtz_exp, set_experiment=True, anomalous=Anomalous)
     sfcalculator.inspect_data()
     atoms_pos_batch = torch.tile(sfcalculator.atom_pos_orth, [5, 1, 1])
 
-    Fprotein = sfcalculator.Calc_Fprotein(Return=True)
-    Fsolvent = sfcalculator.Calc_Fsolvent(
+    Fprotein = sfcalculator.calc_fprotein(Return=True)
+    Fsolvent = sfcalculator.calc_fsolvent(
         dmin_mask=6.0, dmin_nonzero=3.0, Return=True)
-    Fprotein_batch = sfcalculator.Calc_Fprotein_batch(atoms_pos_batch, Return=True, PARTITION=partition_size)
-    Fsolvent_batch = sfcalculator.Calc_Fsolvent_batch(
+    Fprotein_batch = sfcalculator.calc_fprotein_batch(atoms_pos_batch, Return=True, PARTITION=partition_size)
+    Fsolvent_batch = sfcalculator.calc_fsolvent_batch(
          dmin_mask=6.0, dmin_nonzero=3.0, Return=True, PARTITION=partition_size)
 
     kaniso = torch.tensor(
         [-1.2193, -0.5417, -0.6066,  0.8886,  1.1478, -1.6649], device=try_gpu())
-    Ftotal = sfcalculator.Calc_Ftotal(kaniso=kaniso)
-    Ftotal_batch = sfcalculator.Calc_Ftotal_batch(kaniso=kaniso)
+    Ftotal = sfcalculator.calc_ftotal(kaniso=kaniso)
+    Ftotal_batch = sfcalculator.calc_ftotal_batch(kaniso=kaniso)
 
     assert len(Fprotein_batch) == 5
     assert np.all(np.isclose(Fprotein_batch[3].cpu().numpy(),
@@ -139,14 +139,14 @@ def test_calc_Fall_batch(data_pdb, data_mtz_exp, Anomalous, partition_size):
                              rtol=1e-3, atol=1e1))
 
 
-def test_prepare_Dataset(data_pdb, data_mtz_exp):
+def test_prepare_dataset(data_pdb, data_mtz_exp):
     sfcalculator = SFcalculator(
         data_pdb, mtzfile_dir=data_mtz_exp, set_experiment=True)
     sfcalculator.inspect_data()
 
-    sfcalculator.Calc_Fprotein(Return=False)
-    sfcalculator.Calc_Fsolvent(
+    sfcalculator.calc_fprotein(Return=False)
+    sfcalculator.calc_fsolvent(
         dmin_mask=6.0, dmin_nonzero=3.0, Return=False)
-    sfcalculator.Calc_Ftotal()
-    ds = sfcalculator.prepare_DataSet("HKL_array", "Ftotal_HKL")
+    sfcalculator.calc_ftotal()
+    ds = sfcalculator.prepare_dataset("HKL_array", "Ftotal_HKL")
     assert len(ds) == 3197

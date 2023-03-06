@@ -262,7 +262,7 @@ class SFcalculator(object):
         print("Grid size:", self.gridsize)
         self.inspected = True
 
-    def Calc_Fprotein(self, atoms_position_tensor=None,
+    def calc_fprotein(self, atoms_position_tensor=None,
                       atoms_biso_tensor=None,
                       atoms_baniso_tensor=None,
                       atoms_occ_tensor=None,
@@ -332,7 +332,7 @@ class SFcalculator(object):
             if Return:
                 return self.Fprotein_asu
 
-    def Calc_Fsolvent(self, solventpct=None, gridsize=None, dmin_mask=6.0, Return=False, dmin_nonzero=3.0):
+    def calc_fsolvent(self, solventpct=None, gridsize=None, dmin_mask=6.0, Return=False, dmin_nonzero=3.0):
         '''
         Calculate the structure factor of solvent mask in a differentiable way
 
@@ -383,7 +383,7 @@ class SFcalculator(object):
             if Return:
                 return self.Fmask_asu
 
-    def Calc_Ftotal(self, kall=None, kaniso=None, ksol=None, bsol=None):
+    def calc_ftotal(self, kall=None, kaniso=None, ksol=None, bsol=None):
         if kall is None:
             kall = torch.tensor(1.0, device=try_gpu())
         if kaniso is None:
@@ -404,7 +404,7 @@ class SFcalculator(object):
             self.Ftotal_asu = kall * DWF_aniso(kaniso[None, ...], self.reciprocal_cell_paras, self.Hasu_array)[0] * (self.Fprotein_asu+scaled_Fmask)
             return self.Ftotal_asu
 
-    def Calc_Fprotein_batch(self, atoms_position_batch, NO_Bfactor=False, Return=False, PARTITION=20):
+    def calc_fprotein_batch(self, atoms_position_batch, NO_Bfactor=False, Return=False, PARTITION=20):
         '''
         Calculate the Fprotein with batched models. Most parameters are similar to `Calc_Fprotein`
 
@@ -436,7 +436,7 @@ class SFcalculator(object):
             if Return:
                 return self.Fprotein_asu_batch
 
-    def Calc_Fsolvent_batch(self, solventpct=None, gridsize=None, dmin_mask=6, Return=False, PARTITION=100, dmin_nonzero=3.0):
+    def calc_fsolvent_batch(self, solventpct=None, gridsize=None, dmin_mask=6, Return=False, PARTITION=100, dmin_nonzero=3.0):
         '''
         Should run after Calc_Fprotein_batch, calculate the solvent mask structure factors in batched manner
         most parameters are similar to `Calc_Fmask`
@@ -499,7 +499,7 @@ class SFcalculator(object):
             if Return:
                 return self.Fmask_asu_batch
 
-    def Calc_Ftotal_batch(self, kall=None, kaniso=None, ksol=None, bsol=None):
+    def calc_ftotal_batch(self, kall=None, kaniso=None, ksol=None, bsol=None):
 
         if kall is None:
             kall = torch.tensor(1.0, device=try_gpu())
@@ -521,7 +521,7 @@ class SFcalculator(object):
             self.Ftotal_asu_batch = kall * DWF_aniso(kaniso[None, ...], self.reciprocal_cell_paras, self.Hasu_array)[0] * (self.Fprotein_asu_batch+scaled_Fmask)
             return self.Ftotal_asu_batch
 
-    def prepare_DataSet(self, HKL_attr, F_attr):
+    def prepare_dataset(self, HKL_attr, F_attr):
         F_out = getattr(self, F_attr)
         HKL_out = getattr(self, HKL_attr)
         assert len(F_out) == len(
