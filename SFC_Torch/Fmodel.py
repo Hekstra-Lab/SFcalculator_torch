@@ -435,7 +435,7 @@ class SFcalculator(object):
         def closure():
             Fmodel = self.calc_ftotal()
             Fmodel_mag = torch.abs(Fmodel)
-            loss = torch.sum((self.Fo - Fmodel_mag)**2)
+            loss = torch.sum((self.Fo[self.rwork_id] - Fmodel_mag[self.rwork_id])**2)
             self.lbfgs.zero_grad()
             loss.backward()
             return loss
