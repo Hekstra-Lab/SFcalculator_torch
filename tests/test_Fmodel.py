@@ -41,9 +41,10 @@ def test_calc_fall(data_pdb, data_mtz_exp, data_mtz_fmodel_ksol0, data_mtz_fmode
     Fprotein = sfcalculator.calc_fprotein(Return=Return)
     Fsolvent = sfcalculator.calc_fsolvent(
         dmin_mask=6.0, dmin_nonzero=3.0, Return=Return)
-
+    sfcalculator.get_scales(n_steps=20, lr=0.5, verbose=False)
     Ftotal = sfcalculator.calc_ftotal()
     assert len(Ftotal) == 3197
+    assert sfcalculator.r_free < 0.15
 
     Fcalc = rs.read_mtz(data_mtz_fmodel_ksol0)
     Fmodel = rs.read_mtz(data_mtz_fmodel_ksol1)
@@ -97,6 +98,7 @@ def test_calc_ftotal_nodata(data_pdb):
     sfcalculator.calc_fprotein(Return=False)
     sfcalculator.calc_fsolvent(
         dmin_mask=6.0, dmin_nonzero=3.0, Return=False)
+    sfcalculator.init_scales(requires_grad=False)
     Ftotal = sfcalculator.calc_ftotal()
     assert len(Ftotal) == 1747
 
@@ -112,14 +114,17 @@ def test_calc_fall_batch(data_pdb, data_mtz_exp, Anomalous, partition_size):
     Fprotein = sfcalculator.calc_fprotein(Return=True)
     Fsolvent = sfcalculator.calc_fsolvent(
         dmin_mask=6.0, dmin_nonzero=3.0, Return=True)
-    Fprotein_batch = sfcalculator.calc_fprotein_batch(atoms_pos_batch, Return=True, PARTITION=partition_size)
+    Fprotein_batch = sfcalculator.calc_fprotein_batch(
+        atoms_pos_batch, Return=True, PARTITION=partition_size)
     Fsolvent_batch = sfcalculator.calc_fsolvent_batch(
-         dmin_mask=6.0, dmin_nonzero=3.0, Return=True, PARTITION=partition_size)
+        dmin_mask=6.0, dmin_nonzero=3.0, Return=True, PARTITION=partition_size)
 
     kaniso = torch.tensor(
         [-1.2193, -0.5417, -0.6066,  0.8886,  1.1478, -1.6649], device=try_gpu())
-    Ftotal = sfcalculator.calc_ftotal(kaniso=kaniso)
-    Ftotal_batch = sfcalculator.calc_ftotal_batch(kaniso=kaniso)
+    sfcalculator.init_scales(requires_grad=False)
+    sfcalculator.set_scales(kaniso=kaniso)
+    Ftotal = sfcalculator.calc_ftotal()
+    Ftotal_batch = sfcalculator.calc_ftotal_batch()
 
     assert len(Fprotein_batch) == 5
     assert np.all(np.isclose(Fprotein_batch[3].cpu().numpy(),
@@ -128,11 +133,11 @@ def test_calc_fall_batch(data_pdb, data_mtz_exp, Anomalous, partition_size):
     assert np.all(np.isclose(sfcalculator.Fprotein_asu_batch[4].cpu().numpy(),
                              sfcalculator.Fprotein_asu.cpu().numpy(),
                              rtol=1e-5, atol=5e-3))
-    
+
     assert len(Fsolvent_batch) == 5
     assert np.all(np.isclose(torch.abs(Fsolvent).cpu().numpy(),
                              torch.abs(Fsolvent_batch[1]).cpu().numpy(),
-                             rtol=1e-3, atol=1e-2)) 
+                             rtol=1e-3, atol=1e-2))
 
     assert np.all(np.isclose(torch.abs(Ftotal_batch[2]).cpu().numpy(),
                              torch.abs(Ftotal).cpu().numpy(),
@@ -143,10 +148,10 @@ def test_prepare_dataset(data_pdb, data_mtz_exp):
     sfcalculator = SFcalculator(
         data_pdb, mtzfile_dir=data_mtz_exp, set_experiment=True)
     sfcalculator.inspect_data()
-
     sfcalculator.calc_fprotein(Return=False)
     sfcalculator.calc_fsolvent(
         dmin_mask=6.0, dmin_nonzero=3.0, Return=False)
+    sfcalculator.init_scales(requires_grad=False)
     sfcalculator.calc_ftotal()
     ds = sfcalculator.prepare_dataset("HKL_array", "Ftotal_HKL")
     assert len(ds) == 3197
