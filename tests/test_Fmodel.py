@@ -15,11 +15,15 @@ def test_constructor_SFcalculator(data_pdb, data_mtz_exp, case):
         sfcalculator = SFcalculator(
             data_pdb, mtzfile_dir=data_mtz_exp, set_experiment=True)
         sfcalculator.inspect_data()
+        bins_labels = sfcalculator.assign_resolution_bins(return_labels=True)
         assert sfcalculator.inspected
         assert np.isclose(sfcalculator.solventpct.cpu().numpy(), 0.1667, 1e-3)
         assert sfcalculator.gridsize == [48, 60, 60]
         assert len(sfcalculator.HKL_array) == 3197
         assert len(sfcalculator.Hasu_array) == 3255
+        assert len(sfcalculator.bins) == 3197
+        assert np.all(np.sort(np.unique(sfcalculator.bins)) == np.arange(0,10))
+        assert len(bins_labels) == 10
     else:
         sfcalculator = SFcalculator(
             data_pdb, mtzfile_dir=None, dmin=2.5, set_experiment=True)

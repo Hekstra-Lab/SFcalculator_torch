@@ -11,6 +11,7 @@ __all__ = [
     "vdw_rad_tensor",
     "nonH_index",
     "assert_numpy",
+    "bin_by_logarithmic",
 ]
 
 def r_factor(Fo, Fmodel, rwork_id, rfree_id):
@@ -244,3 +245,35 @@ def assert_numpy(x, arr_type=None):
     if arr_type is not None:
         x = x.astype(arr_type)
     return x
+
+def bin_by_logarithmic(data, bins=10, Nmin=100):
+    """Bin data with the logarithmic algorithm
+    According to Urzhumtsev, A., et al. Acta Crystallographica Section D: Biological Crystallography 65.12 (2009)
+
+    Parameters
+    ----------
+    data : np.ndarray, list
+        Data to bin with logarithmic algorithm, like dHKL
+    bins : int, optional
+        Number of bins, by default 10
+    Nmin : int, optional
+        Minimum number of reflections for the first two low-resolution ranges, by default 100
+
+    Returns
+    -------
+    assignments : np.ndarray
+        Bins to which data were assigned
+    bin_edges : np.ndarray
+        Values of bin boundaries (1D array with `bins + 1` entries)
+    """
+    from reciprocalspaceship.utils import assign_with_binedges
+   
+    data_sorted = np.sort(data)[::-1]
+    dlow = data_sorted[0]
+    dhigh = data_sorted[-1]
+    d1 = data_sorted[Nmin]
+    d2 = data_sorted[2*Nmin+10]
+    lnd_list = np.linspace(np.log(d2), np.log(dhigh), bins-1)
+    bin_edges = np.concatenate([[dlow, d1], np.exp(lnd_list)])
+    assignment = assign_with_binedges(data, bin_edges, right_inclusive=True)
+    return assignment, bin_edges

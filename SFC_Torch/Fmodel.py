@@ -21,7 +21,7 @@ import reciprocalspaceship as rs
 from .symmetry import generate_reciprocal_asu, expand_to_p1
 from .mask import reciprocal_grid, rsgrid2realmask, realmask2Fmask
 from .utils import try_gpu, DWF_aniso, DWF_iso, diff_array, asu2HKL
-from .utils import vdw_rad_tensor, unitcell_grid_center
+from .utils import vdw_rad_tensor, unitcell_grid_center, bin_by_logarithmic
 from .packingscore import packingscore_voxelgrid_torch
 from .utils import r_factor, assert_numpy
 
@@ -252,7 +252,41 @@ class SFcalculator(object):
         except:
             print("No Free Flag! Check your data!")
 
-    def inspect_data(self):
+    def assign_resolution_bins(self, bins=10, Nmin=100, return_labels=True, format_str=".2f"):
+        """Assign reflections in HKL_array to resolution bins with logarithmic algorithm.
+        The labels will be stored in self.bins
+
+        Urzhumtsev, A., et al. Acta Crystallographica Section D: Biological Crystallography 65.12 (2009)
+
+        Parameters
+        ----------
+        bins : int, optional
+            Number of bins, by default 10
+        Nmin : int, optional
+            Minimum number of reflections for the first two low-resolution ranges, by default 100
+        return_labels : bool, optional
+            Whether to return a list of labels corresponding to the edges
+            of each resolution bin, by default True
+        format_str : str, optional
+            Format string for constructing bin labels, by default ".2f"
+
+        Returns
+        -------
+        None or list of labels
+        """
+        assert hasattr(
+            self, "dHKL"), "Must have resolution stored in dHKL attribute!"
+
+        assignments, edges = bin_by_logarithmic(self.dHKL, bins, Nmin)
+        self.bins = assignments
+        if return_labels:
+            labels = [
+                f"{e1:{format_str}} - {e2:{format_str}}"
+                for e1, e2 in zip(edges[:-1], edges[1:])
+            ]
+            return labels
+
+    def inspect_data(self, verbose=True):
         '''
         Do an inspection of data, for hints about 
         1. solvent percentage for mask calculation
@@ -275,9 +309,9 @@ class SFcalculator(object):
         else:
             mtz.set_data(self.Hasu_array)
         self.gridsize = mtz.get_size_for_hkl(sample_rate=3.0)
-
-        print("Solvent Percentage:", self.solventpct)
-        print("Grid size:", self.gridsize)
+        if verbose:
+            print("Solvent Percentage:", self.solventpct)
+            print("Grid size:", self.gridsize)
         self.inspected = True
 
     def calc_fprotein(self, atoms_position_tensor=None,
@@ -414,7 +448,7 @@ class SFcalculator(object):
             0.35, device=try_gpu(), requires_grad=requires_grad)
         self.bsol = torch.tensor(
             50.0, device=try_gpu(), requires_grad=requires_grad)
-    
+
     def set_scales(self, kall=None, kaniso=None, ksol=None, bsol=None):
         if kall is not None:
             self.kall = kall
@@ -435,7 +469,8 @@ class SFcalculator(object):
         def closure():
             Fmodel = self.calc_ftotal()
             Fmodel_mag = torch.abs(Fmodel)
-            loss = torch.sum((self.Fo[self.rwork_id] - Fmodel_mag[self.rwork_id])**2)
+            loss = torch.sum(
+                (self.Fo[self.rwork_id] - Fmodel_mag[self.rwork_id])**2)
             self.lbfgs.zero_grad()
             loss.backward()
             return loss
