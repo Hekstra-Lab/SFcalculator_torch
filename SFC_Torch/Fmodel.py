@@ -436,6 +436,67 @@ class SFcalculator(object):
                 0., device=try_gpu(), dtype=torch.complex64)
             if Return:
                 return self.Fmask_asu
+    
+    def _init_kmask_kiso(self):
+        """Use the root finding approach discussed to initialize kmask and kiso per resolution bin
+        Afonine, P. V., et al. Acta Crystallographica Section D: Biological Crystallography 69.4 (2013): 625-634.
+        """
+        kmasks = []
+        kisos = []
+        ws = torch.abs(self.Fmask_HKL).pow(2)
+        vs = torch.real(self.Fprotein_HKL.conj()*self.Fmask_HKL + 
+                        self.Fprotein_HKL*self.Fmask_HKL.conj())
+        us = torch.abs(self.Fprotein_HKL).pow(2)
+        Is = self.Fo.pow(2)
+        
+        for bin_i in np.sort(np.unique(self.bins)):
+            index_i = (~self.free_flag) & (self.bins == bin_i)
+            
+            C2 = torch.sum(ws[index_i] * Is[index_i])
+            B2 = 2*torch.sum(vs[index_i] * Is[index_i])
+            A2 = torch.sum(us[index_i] * Is[index_i])
+            Y2 = torch.sum(Is[index_i].pow(2))
+            D3 = torch.sum(ws[index_i])
+            C3 = 3*torch.sum(ws[index_i]*vs[index_i])
+            B3 = torch.sum(2*vs[index_i].pow(2) + us[index_i]*ws[index_i])
+            A3 = torch.sum(us[index_i]*vs[index_i])
+            Y3 = torch.sum(Is[index_i]*vs[index_i])
+
+            a = assert_numpy((C3*Y2 - C2*B2 - C2*Y3)/(D3*Y2 - C2**2))
+            b = assert_numpy((B3*Y2 - C2*A2 - Y3*B2)/(D3*Y2 - C2**2))
+            c = assert_numpy((A3*Y2 - Y3*A2)/(D3*Y2 - C2**2))
+            roots = np.roots([1.0, a, b, c])
+
+            # Get the best kmask
+            if np.all(roots < 0.0):
+                kmask = torch.tensor(0.0).to(C2)
+                K = (kmask.pow(2)*C2 + kmask*B2 + A2)/Y2
+                kiso = torch.sqrt(K[min_index]).reciprocal() # K = k_total^(-2)
+            else:
+                N = np.sum(roots > 0.0)
+                kmask_candidates = torch.zeros(N).to(C2)
+                K_candidates = torch.zeros(N).to(C2)
+                LS_candidates = torch.zeros(N).to(C2)
+                i = 0
+                for root in roots:
+                    if root < 0.0:
+                        continue
+                    else:
+                        kmask_temp = torch.tensor(root).to(C2)
+                        K_temp = (kmask_temp.pow(2)*C2 + kmask_temp*B2 + A2)/Y2
+                        LS_temp = torch.sum(torch.abs(self.Fprotein_HKL[index_i] + kmask_temp*self.Fmask_HKL[index_i]).pow(2) - K_temp*Is[index_i]).pow(2)
+                        kmask_candidates[i] = kmask_temp
+                        K_candidates[i] = K_temp # Note, K should be positive too
+                        LS_candidates[i] = LS_temp
+                        i += 1
+                min_index = torch.argmin(LS_candidates)
+                kmask = kmask_candidates[min_index]
+                kiso = torch.sqrt(K_candidates[min_index]).reciprocal() # K = k_total^(-2)
+            
+            kmasks.append(kmask.requires_grad_())
+            kisos.append(kiso.requires_grad_()) 
+            
+        return kmasks, kisos
 
     def init_scales(self, requires_grad=True):
         self.kall = torch.tensor(
