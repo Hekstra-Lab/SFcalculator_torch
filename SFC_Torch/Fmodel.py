@@ -436,7 +436,7 @@ class SFcalculator(object):
                 0., device=try_gpu(), dtype=torch.complex64)
             if Return:
                 return self.Fmask_asu
-    
+
     def _init_kmask_kiso(self):
         """Use the root finding approach discussed to initialize kmask and kiso per resolution bin
         Afonine, P. V., et al. Acta Crystallographica Section D: Biological Crystallography 69.4 (2013): 625-634.
@@ -444,14 +444,14 @@ class SFcalculator(object):
         kmasks = []
         kisos = []
         ws = torch.abs(self.Fmask_HKL).pow(2)
-        vs = torch.real(self.Fprotein_HKL.conj()*self.Fmask_HKL + 
+        vs = torch.real(self.Fprotein_HKL.conj()*self.Fmask_HKL +
                         self.Fprotein_HKL*self.Fmask_HKL.conj())
         us = torch.abs(self.Fprotein_HKL).pow(2)
         Is = self.Fo.pow(2)
-        
+
         for bin_i in np.sort(np.unique(self.bins)):
             index_i = (~self.free_flag) & (self.bins == bin_i)
-            
+
             C2 = torch.sum(ws[index_i] * Is[index_i])
             B2 = 2*torch.sum(vs[index_i] * Is[index_i])
             A2 = torch.sum(us[index_i] * Is[index_i])
@@ -471,7 +471,8 @@ class SFcalculator(object):
             if np.all(roots < 0.0):
                 kmask = torch.tensor(0.0).to(C2)
                 K = (kmask.pow(2)*C2 + kmask*B2 + A2)/Y2
-                kiso = torch.sqrt(K[min_index]).reciprocal() # K = k_total^(-2)
+                # K = k_total^(-2)
+                kiso = torch.sqrt(K[min_index]).reciprocal()
             else:
                 N = np.sum(roots > 0.0)
                 kmask_candidates = torch.zeros(N).to(C2)
@@ -484,29 +485,44 @@ class SFcalculator(object):
                     else:
                         kmask_temp = torch.tensor(root).to(C2)
                         K_temp = (kmask_temp.pow(2)*C2 + kmask_temp*B2 + A2)/Y2
-                        LS_temp = torch.sum(torch.abs(self.Fprotein_HKL[index_i] + kmask_temp*self.Fmask_HKL[index_i]).pow(2) - K_temp*Is[index_i]).pow(2)
+                        LS_temp = torch.sum(torch.abs(
+                            self.Fprotein_HKL[index_i] + kmask_temp*self.Fmask_HKL[index_i]).pow(2) - K_temp*Is[index_i]).pow(2)
                         kmask_candidates[i] = kmask_temp
-                        K_candidates[i] = K_temp # Note, K should be positive too
+                        # Note, K should be positive too
+                        K_candidates[i] = K_temp
                         LS_candidates[i] = LS_temp
                         i += 1
                 min_index = torch.argmin(LS_candidates)
                 kmask = kmask_candidates[min_index]
-                kiso = torch.sqrt(K_candidates[min_index]).reciprocal() # K = k_total^(-2)
-            
+                # K = k_total^(-2)
+                kiso = torch.sqrt(K_candidates[min_index]).reciprocal()
+
             kmasks.append(kmask.requires_grad_())
-            kisos.append(kiso.requires_grad_()) 
-            
+            kisos.append(kiso.requires_grad_())
         return kmasks, kisos
 
+    def _init_uaniso(self):
+        """Use the analytical solutuon discussed to initialize Uaniso per resolution bin
+        Afonine, P. V., et al. Acta Crystallographica Section D: Biological Crystallography 69.4 (2013): 625-634.
+        """
+        uanisos = []
+        for bin_i in np.sort(np.unique(self.bins)):
+            index_i = (~self.free_flag) & (self.bins == bin_i)
+            s = self.HKL_array[index_i]
+            V = np.concatenate(
+                [s**2, 2*s[:, [0, 2, 1]]*s[:, [1, 0, 2]]], axis=-1)
+            Z = assert_numpy(torch.log(self.Fo[index_i]/(self.kisos[bin_i]*torch.abs(
+                self.Fprotein_HKL[index_i] +
+                self.kmasks[bin_i]*self.Fmask_HKL[index_i])))/(2.0*np.pi**2))
+            M = V.T @ V
+            b = -np.sum(Z*V.T, axis=-1)
+            U = np.linalg.inv(M) @ b
+            uanisos.append(torch.tensor(U).to(self.Fo).requires_grad_())
+        return uanisos
+
     def init_scales(self, requires_grad=True):
-        self.kall = torch.tensor(
-            1.0, device=try_gpu(), requires_grad=requires_grad)
-        self.kaniso = torch.normal(
-            0.01, 0.01, size=[6], device=try_gpu(), requires_grad=requires_grad)
-        self.ksol = torch.tensor(
-            0.35, device=try_gpu(), requires_grad=requires_grad)
-        self.bsol = torch.tensor(
-            50.0, device=try_gpu(), requires_grad=requires_grad)
+        self.kmasks, self.kisos = self._init_kmask_kiso()
+        self.uanisos = self._init_uaniso()
 
     def set_scales(self, kall=None, kaniso=None, ksol=None, bsol=None):
         if kall is not None:
