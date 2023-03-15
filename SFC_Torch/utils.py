@@ -14,7 +14,7 @@ __all__ = [
     "bin_by_logarithmic",
 ]
 
-def r_factor(Fo, Fmodel, rwork_id, rfree_id):
+def r_factor(Fo, Fmodel, free_flag):
     '''
     A function to calculate R_work and R_free
 
@@ -24,17 +24,15 @@ def r_factor(Fo, Fmodel, rwork_id, rfree_id):
         1D tensor containing Fo corresponding to HKL list
     Fmodel: torch.tensor, [N_hkl,], complex
         1D tensor containing Fmodel corresponding to HKL list
-    rwork_id: np.array, [N_work,]
-        1D array, a list of index used to do work calculation, usually come from np.argwhere()
-    rfree_id: np.array, [N_free,]
-        1D array, a list of index used to do test calculation, usually come from np.argwhere()
+    free_flag: np.array, [N_hkl,], binary
+        1D array, whether this index should be treated as test set
 
     Returns
     -------
     R_work, R_free: Both are floats
     '''
-    R_work = torch.sum(torch.abs(Fo[rwork_id] - Fmodel[rwork_id])) / torch.sum(Fo[rwork_id])
-    R_free = torch.sum(torch.abs(Fo[rfree_id] - Fmodel[rfree_id])) / torch.sum(Fo[rfree_id])
+    R_work = torch.sum(torch.abs(Fo[~free_flag] - Fmodel[~free_flag])) / torch.sum(Fo[~free_flag])
+    R_free = torch.sum(torch.abs(Fo[free_flag] - Fmodel[free_flag])) / torch.sum(Fo[free_flag])
     return R_work, R_free
 
 def diff_array(a, b):

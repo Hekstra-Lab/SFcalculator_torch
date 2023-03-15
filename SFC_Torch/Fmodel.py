@@ -245,10 +245,8 @@ class SFcalculator(object):
         except:
             print("MTZ file doesn't contain 'FP' or 'SIGFP'! Check your data!")
         try:
-            self.rfree_id = np.argwhere(
-                exp_mtz[freeflag].values == testset_value).reshape(-1)
-            self.rwork_id = np.argwhere(
-                exp_mtz[freeflag].values != testset_value).reshape(-1)
+            self.free_flag = np.where(
+                exp_mtz[freeflag].values == testset_value, True, False)
         except:
             print("No Free Flag! Check your data!")
 
@@ -459,7 +457,7 @@ class SFcalculator(object):
         if bsol is not None:
             self.bsol = bsol
 
-    def get_scales(self, n_steps=50, lr=0.5, verbose=True, initialize=True, return_loss=False):
+    def get_scales(self, n_steps=20, lr=0.5, verbose=True, initialize=True, return_loss=False):
         '''
         Use LBFGS to optimize scales
         '''
@@ -470,7 +468,7 @@ class SFcalculator(object):
             Fmodel = self.calc_ftotal()
             Fmodel_mag = torch.abs(Fmodel)
             loss = torch.sum(
-                (self.Fo[self.rwork_id] - Fmodel_mag[self.rwork_id])**2)
+                (self.Fo[~self.free_flag] - Fmodel_mag[~self.free_flag])**2)
             self.lbfgs.zero_grad()
             loss.backward()
             return loss
@@ -484,7 +482,7 @@ class SFcalculator(object):
             Fmodel = self.calc_ftotal()
             Fmodel_mag = torch.abs(Fmodel)
             r_work, r_free = r_factor(
-                self.Fo, Fmodel_mag, self.rwork_id, self.rfree_id)
+                self.Fo, Fmodel_mag, self.free_flag)
             loss_track.append(
                 [assert_numpy(loss), assert_numpy(r_work), assert_numpy(r_free)])
             str_ = f"Time: {time.time()-start_time:.3f}"
