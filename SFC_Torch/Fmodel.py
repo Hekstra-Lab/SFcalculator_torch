@@ -453,7 +453,7 @@ class SFcalculator(object):
         kmasks = []
         kisos = []
         ws = torch.abs(self.Fmask_HKL).pow(2)
-        vs = torch.real(self.Fprotein_HKL.conj()*self.Fmask_HKL +
+        vs = 0.5*torch.real(self.Fprotein_HKL.conj()*self.Fmask_HKL +
                         self.Fprotein_HKL*self.Fmask_HKL.conj())
         us = torch.abs(self.Fprotein_HKL).pow(2)
         Is = self.Fo.pow(2)
@@ -498,6 +498,8 @@ class SFcalculator(object):
                     kmask_temp = torch.tensor(
                         np.real_if_close(root, tol=1000)).to(C2)
                 K_temp = (kmask_temp.pow(2)*C2 + kmask_temp*B2 + A2)/Y2
+                if K_temp < 0.0:
+                    kmask_temp = torch.tensor(1.0).to(C2)
                 LS_temp = torch.sum(torch.abs(
                     self.Fprotein_HKL[index_i] + kmask_temp*self.Fmask_HKL[index_i]).pow(2) - K_temp*Is[index_i]).pow(2)
                 LSpp_temp = 3*kmask_temp.pow(2)*D3 + \
@@ -564,24 +566,65 @@ class SFcalculator(object):
         else:
             self._set_scales(requires_grad)
 
-    def get_scales(self, n_steps=20, lr=0.5, verbose=True, initialize=True, return_loss=False):
+    def get_scales_LS(self, n_steps=5, lr=0.5, verbose=True, initialize=True, return_loss=False):
         '''
-        Use LBFGS to optimize scales
+        Use LBFGS to optimize scales with least square error
         '''
-        # TODO: I am working here
+        assert hasattr(self, 'Fo'), "No experimental data Fo!"
+
         if initialize:
             self.init_scales(requires_grad=True)
 
         def closure():
             Fmodel = self.calc_ftotal()
             Fmodel_mag = torch.abs(Fmodel)
+            # LS loss
             loss = torch.sum(
                 (self.Fo[~self.free_flag] - Fmodel_mag[~self.free_flag])**2)
             self.lbfgs.zero_grad()
             loss.backward()
             return loss
 
-        params = [self.kall, self.kaniso, self.ksol, self.bsol]
+        params = self.kmasks + self.kisos + self.uanisos
+        self.lbfgs = torch.optim.LBFGS(params, lr=lr)
+        loss_track = []
+        for _ in range(n_steps):
+            start_time = time.time()
+            loss = self.lbfgs.step(closure)
+            Fmodel = self.calc_ftotal()
+            Fmodel_mag = torch.abs(Fmodel)
+            r_work, r_free = r_factor(
+                self.Fo, Fmodel_mag, self.free_flag)
+            loss_track.append(
+                [assert_numpy(loss), assert_numpy(r_work), assert_numpy(r_free)])
+            str_ = f"Time: {time.time()-start_time:.3f}"
+            if verbose:
+                print(
+                    f"Scale, {loss_track[-1][0]:.3f}, {loss_track[-1][1]:.3f}, {loss_track[-1][2]:.3f}", str_, flush=True)
+        self.r_work, self.r_free = r_work, r_free
+        if return_loss:
+            return loss_track
+
+    def get_scales_r(self, n_steps=5, lr=0.5, verbose=True, initialize=True, return_loss=False):
+        '''
+        Use LBFGS to optimize scales directly with r factor error
+        '''
+        assert hasattr(self, 'Fo'), "No experimental data Fo!"
+
+        if initialize:
+            self.init_scales(requires_grad=True)
+
+        def closure():
+            Fmodel = self.calc_ftotal()
+            Fmodel_mag = torch.abs(Fmodel)
+            # R factor
+            loss = torch.sum(
+                torch.abs(self.Fo[~self.free_flag] - Fmodel_mag[~self.free_flag]))/torch.sum(self.Fo[~self.free_flag])
+            self.lbfgs.zero_grad()
+            loss.backward()
+            return loss
+
+        params = self.kmasks + self.kisos + self.uanisos
         self.lbfgs = torch.optim.LBFGS(params, lr=lr)
         loss_track = []
         for _ in range(n_steps):
