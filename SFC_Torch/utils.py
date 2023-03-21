@@ -20,10 +20,10 @@ def r_factor(Fo, Fmodel, free_flag):
 
     Parameters
     ----------
-    Fo: torch.tensor, [N_hkl,], complex
-        1D tensor containing Fo corresponding to HKL list
-    Fmodel: torch.tensor, [N_hkl,], complex
-        1D tensor containing Fmodel corresponding to HKL list
+    Fo: torch.tensor, [N_hkl,], real
+        1D tensor containing Fo magnitude corresponding to HKL list
+    Fmodel: torch.tensor, [N_hkl,], real
+        1D tensor containing Fmodel magnitude corresponding to HKL list
     free_flag: np.array, [N_hkl,], binary
         1D array, whether this index should be treated as test set
 
