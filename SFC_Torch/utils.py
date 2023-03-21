@@ -267,8 +267,8 @@ def bin_by_logarithmic(data, bins=10, Nmin=100):
     from reciprocalspaceship.utils import assign_with_binedges
    
     data_sorted = np.sort(data)[::-1]
-    dlow = data_sorted[0]
-    dhigh = data_sorted[-1]
+    dlow = data_sorted[0] + 0.001
+    dhigh = data_sorted[-1] - 0.001
     d1 = data_sorted[Nmin]
     d2 = data_sorted[2*Nmin+10]
     lnd_list = np.linspace(np.log(d2), np.log(dhigh), bins-1)
