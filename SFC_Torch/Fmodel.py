@@ -272,10 +272,16 @@ class SFcalculator(object):
         -------
         None or list of labels
         """
-        assert hasattr(
-            self, "dHKL"), "Must have resolution stored in dHKL attribute!"
-
-        assignments, edges = bin_by_logarithmic(self.dHKL, bins, Nmin)
+        if not self.HKL_array is None:
+            assert hasattr(
+                self, "dHKL"), "Must have resolution stored in dHKL attribute!"
+            d = self.dHKL
+        else:
+            assert hasattr(
+                self, "dHasu"), "Must have resolution stored in dHKL attribute!"
+            d = self.dHasu
+        assignments, edges = bin_by_logarithmic(d, bins, Nmin)
+        self.n_bins = bins
         self.bins = assignments
         if return_labels:
             labels = [
@@ -437,9 +443,11 @@ class SFcalculator(object):
             if Return:
                 return self.Fmask_asu
 
-    def _init_kmask_kiso(self):
+    def _init_kmask_kiso(self, requires_grad=True):
         """Use the root finding approach discussed to initialize kmask and kiso per resolution bin
         Afonine, P. V., et al. Acta Crystallographica Section D: Biological Crystallography 69.4 (2013): 625-634.
+
+        Note: Only work when you have mtz data, self.Fo
         """
 
         kmasks = []
@@ -457,7 +465,8 @@ class SFcalculator(object):
             B2 = 2.*torch.sum(vs[index_i] * Is[index_i])
             A2 = torch.sum(us[index_i] * Is[index_i])
             Y2 = torch.sum(Is[index_i].pow(2))
-            D3 = torch.sum(ws[index_i].pow(2)) # They made this wrong in their original paper
+            # They made this wrong in their original paper
+            D3 = torch.sum(ws[index_i].pow(2))
             C3 = 3.*torch.sum(ws[index_i]*vs[index_i])
             B3 = torch.sum(2*vs[index_i].pow(2) + us[index_i]*ws[index_i])
             A3 = torch.sum(us[index_i]*vs[index_i])
@@ -466,7 +475,7 @@ class SFcalculator(object):
             a = assert_numpy((C3*Y2 - C2*B2 - C2*Y3)/(D3*Y2 - C2**2))
             b = assert_numpy((B3*Y2 - C2*A2 - Y3*B2)/(D3*Y2 - C2**2))
             c = assert_numpy((A3*Y2 - Y3*A2)/(D3*Y2 - C2**2))
-            
+
             try:
                 roots = np.roots([1.0, a, b, c])
             except:
@@ -486,35 +495,40 @@ class SFcalculator(object):
                 if np.iscomplex(root) or (root < 0):
                     kmask_temp = torch.tensor(0.0001).to(C2)
                 else:
-                    kmask_temp = torch.tensor(np.real_if_close(root, tol=1000)).to(C2)
+                    kmask_temp = torch.tensor(
+                        np.real_if_close(root, tol=1000)).to(C2)
                 K_temp = (kmask_temp.pow(2)*C2 + kmask_temp*B2 + A2)/Y2
                 LS_temp = torch.sum(torch.abs(
                     self.Fprotein_HKL[index_i] + kmask_temp*self.Fmask_HKL[index_i]).pow(2) - K_temp*Is[index_i]).pow(2)
-                LSpp_temp = 3*kmask_temp.pow(2)*D3 + 2*kmask_temp*C3 + B3 - C2*K_temp
+                LSpp_temp = 3*kmask_temp.pow(2)*D3 + \
+                    2*kmask_temp*C3 + B3 - C2*K_temp
                 kmask_candidates[i] = kmask_temp
                 # Note, K should be positive too
                 K_candidates[i] = K_temp
                 LSpp_candidates[i] = LSpp_temp
                 LS_candidates[i] = LS_temp
 
-            legitimacy = (roots > 0) & np.isreal(roots) & (assert_numpy(LSpp_candidates) > 0)
+            legitimacy = (roots > 0) & np.isreal(roots) & (
+                assert_numpy(LSpp_candidates) > 0)
             if (np.sum(legitimacy) > 0) and (np.sum(legitimacy) < 3):
                 kmask_candidates = kmask_candidates[legitimacy]
                 LS_candidates = LS_candidates[legitimacy]
                 K_candidates = K_candidates[legitimacy]
-            
+
             min_index = torch.argmin(LS_candidates)
             kmask = kmask_candidates[min_index]
             # K = k_total^(-2)
             kiso = torch.sqrt(K_candidates[min_index]).reciprocal()
 
-            kmasks.append(kmask.requires_grad_())
-            kisos.append(kiso.requires_grad_())
+            kmasks.append(kmask.requires_grad_(requires_grad))
+            kisos.append(kiso.requires_grad_(requires_grad))
         return kmasks, kisos
 
-    def _init_uaniso(self):
+    def _init_uaniso(self, requires_grad=True):
         """Use the analytical solutuon discussed to initialize Uaniso per resolution bin
         Afonine, P. V., et al. Acta Crystallographica Section D: Biological Crystallography 69.4 (2013): 625-634.
+
+        Note: Only work when you have mtz data, self.Fo
         """
         uanisos = []
         for bin_i in np.sort(np.unique(self.bins)):
@@ -528,27 +542,33 @@ class SFcalculator(object):
             M = V.T @ V
             b = -np.sum(Z*V.T, axis=-1)
             U = np.linalg.inv(M) @ b
-            uanisos.append(torch.tensor(U).to(self.Fo).requires_grad_())
+            uanisos.append(torch.tensor(U).to(
+                self.Fo).requires_grad_(requires_grad))
         return uanisos
 
-    def init_scales(self):
-        self.kmasks, self.kisos = self._init_kmask_kiso()
-        self.uanisos = self._init_uaniso()
+    def _set_scales(self, requires_grad, kiso=1.0, kmask=0.35, uaniso=[0.01, 0.01, 0.01, 1e-4, 1e-4, 1e-4]):
+        """Only used for case you don't have data
+        """
+        self.kmasks = [torch.tensor(kmask).to(
+            self.atom_pos_frac).requires_grad_(requires_grad)] * self.n_bins
+        self.kisos = [torch.tensor(kiso).to(
+            self.atom_pos_frac).requires_grad_(requires_grad)] * self.n_bins
+        self.uanisos = [torch.tensor(uaniso).to(
+            self.atom_pos_frac).requires_grad_(requires_grad)] * self.n_bins
 
-    def set_scales(self, kall=None, kaniso=None, ksol=None, bsol=None):
-        if kall is not None:
-            self.kall = kall
-        if kaniso is not None:
-            self.kaniso = kaniso
-        if ksol is not None:
-            self.ksol = ksol
-        if bsol is not None:
-            self.bsol = bsol
+    def init_scales(self, requires_grad=True):
+        if hasattr(self, 'Fo'):
+            self.kmasks, self.kisos = self._init_kmask_kiso(
+                requires_grad=requires_grad)
+            self.uanisos = self._init_uaniso(requires_grad=requires_grad)
+        else:
+            self._set_scales(requires_grad)
 
     def get_scales(self, n_steps=20, lr=0.5, verbose=True, initialize=True, return_loss=False):
         '''
         Use LBFGS to optimize scales
         '''
+        # TODO: I am working here
         if initialize:
             self.init_scales(requires_grad=True)
 
@@ -581,24 +601,37 @@ class SFcalculator(object):
         if return_loss:
             return loss_track
 
-    # What do I need for this function?
+    def _calc_ftotal_bini(self, bin_i, index_i, HKL_array, Fprotein, Fmask):
+        """calculate ftotal for bin i
+        """
+        scaled_fmask_i = Fmask[index_i] * self.kmasks[bin_i]
+        fmodel_i = self.kisos[bin_i] * DWF_aniso(self.uanisos[bin_i].unsqueeze(0), self.reciprocal_cell_paras, HKL_array[index_i])[
+            0] * (Fprotein[index_i] + scaled_fmask_i)
+        return fmodel_i
+
     def calc_ftotal(self):
+        """Calculate Ftotal = kiso * exp(-2*pi^2*s^T*Uaniso*s) * (Fprotein + kmask * Fmask)
+
+        kiso, uaniso and kmask are stored for each resolution bin 
+
+        Returns
+        -------
+        torch.tensor, complex
+        """
         if not self.HKL_array is None:
-            dr2_tensor = torch.tensor(self.dr2HKL_array, device=try_gpu())
-            scaled_Fmask = self.ksol * self.Fmask_HKL * \
-                torch.exp(-self.bsol * dr2_tensor/4.0)
-            self.Ftotal_HKL = self.kall * \
-                DWF_aniso(self.kaniso[None, ...], self.reciprocal_cell_paras, self.HKL_array)[
-                    0] * (self.Fprotein_HKL+scaled_Fmask)
-            return self.Ftotal_HKL
+            ftotal_hkl = torch.zeros_like(self.Fprotein_HKL)
+            for bin_i in range(self.n_bins):
+                index_i = (self.bins == bin_i)
+                ftotal_hkl[index_i] = self._calc_ftotal_bini(
+                    bin_i, index_i, self.HKL_array, self.Fprotein_HKL, self.Fmask_HKL)
+            return ftotal_hkl
         else:
-            dr2_tensor = torch.tensor(self.dr2asu_array, device=try_gpu())
-            scaled_Fmask = self.ksol * self.Fmask_asu * \
-                torch.exp(-self.bsol * dr2_tensor/4.0)
-            self.Ftotal_asu = self.kall * \
-                DWF_aniso(self.kaniso[None, ...], self.reciprocal_cell_paras, self.Hasu_array)[
-                    0] * (self.Fprotein_asu+scaled_Fmask)
-            return self.Ftotal_asu
+            ftotal_asu = torch.zeros_like(self.Fprotein_asu)
+            for bin_i in range(self.n_bins):
+                index_i = (self.bins == bin_i)
+                ftotal_asu[index_i] = self._calc_ftotal_bini(
+                    bin_i, index_i, self.Hasu_array, self.Fprotein_asu, self.Fmask_asu)
+            return ftotal_asu
 
     def calc_fprotein_batch(self, atoms_position_batch, NO_Bfactor=False, Return=False, PARTITION=20):
         '''
@@ -612,7 +645,6 @@ class SFcalculator(object):
             But larger PARTITION will give a smaller wall time, so this is a trade-off.
         '''
         # Read and tensor-fy necessary information
-        # TODO Test the following line with non-orthogonal unit cell, check if we need a transpose at the transform matrix
         atom_pos_frac_batch = torch.tensordot(
             atoms_position_batch, self.orth2frac_tensor.T, 1)  # [N_batch, N_atoms, N_dim=3]
 
