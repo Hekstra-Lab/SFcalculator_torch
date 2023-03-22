@@ -605,7 +605,7 @@ class SFcalculator(object):
         if return_loss:
             return loss_track
 
-    def _get_scales_lbfgs_r(self, n_steps=5, lr=0.5, verbose=True, initialize=True, return_loss=False):
+    def _get_scales_lbfgs_r(self, n_steps=5, lr=0.1, verbose=True, initialize=True, return_loss=False):
         '''
         Use LBFGS to optimize scales directly with r factor error
         '''
@@ -644,7 +644,7 @@ class SFcalculator(object):
         if return_loss:
             return loss_track
         
-    def get_scales_lbfgs(self, ls_steps=3, r_steps=5, ls_lr=0.1, r_lr=0.5, initialize=True, verbose=True):
+    def get_scales_lbfgs(self, ls_steps=3, r_steps=3, ls_lr=0.1, r_lr=0.1, initialize=True, verbose=True):
         self._get_scales_lbfgs_LS(ls_steps, ls_lr, verbose, initialize)
         self._get_scales_lbfgs_r(r_steps, r_lr, verbose, initialize=False)
 
