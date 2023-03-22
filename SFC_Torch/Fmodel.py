@@ -566,7 +566,7 @@ class SFcalculator(object):
         else:
             self._set_scales(requires_grad)
 
-    def get_scales_LS(self, n_steps=5, lr=0.5, verbose=True, initialize=True, return_loss=False):
+    def _get_scales_lbfgs_LS(self, n_steps=3, lr=0.1, verbose=True, initialize=True, return_loss=False):
         '''
         Use LBFGS to optimize scales with least square error
         '''
@@ -605,7 +605,7 @@ class SFcalculator(object):
         if return_loss:
             return loss_track
 
-    def get_scales_r(self, n_steps=5, lr=0.5, verbose=True, initialize=True, return_loss=False):
+    def _get_scales_lbfgs_r(self, n_steps=5, lr=0.5, verbose=True, initialize=True, return_loss=False):
         '''
         Use LBFGS to optimize scales directly with r factor error
         '''
@@ -643,6 +643,10 @@ class SFcalculator(object):
         self.r_work, self.r_free = r_work, r_free
         if return_loss:
             return loss_track
+        
+    def get_scales_lbfgs(self, ls_steps=3, r_steps=5, ls_lr=0.1, r_lr=0.5, initialize=True, verbose=True):
+        self._get_scales_lbfgs_LS(ls_steps, ls_lr, verbose, initialize)
+        self._get_scales_lbfgs_r(r_steps, r_lr, verbose, initialize=False)
 
     def _calc_ftotal_bini(self, bin_i, index_i, HKL_array, Fprotein, Fmask):
         """calculate ftotal for bin i
