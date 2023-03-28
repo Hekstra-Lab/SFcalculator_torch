@@ -541,7 +541,7 @@ class SFcalculator(object):
             Z = assert_numpy(torch.log(self.Fo[index_i]/(self.kisos[bin_i]*torch.abs(
                 self.Fprotein_HKL[index_i] +
                 self.kmasks[bin_i]*self.Fmask_HKL[index_i])))/(2.0*np.pi**2))
-            M = V.T @ V
+            M = V.T @ V # M = np.einsum("ki,kj->ij", V, V)
             b = -np.sum(Z*V.T, axis=-1)
             U = np.linalg.inv(M) @ b
             uanisos.append(torch.tensor(U).to(
