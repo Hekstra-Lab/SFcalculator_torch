@@ -656,7 +656,7 @@ class SFcalculator(object):
             0] * (Fprotein[index_i] + scaled_fmask_i)
         return fmodel_i
 
-    def calc_ftotal(self):
+    def calc_ftotal(self, Return=True):
         """Calculate Ftotal = kiso * exp(-2*pi^2*s^T*Uaniso*s) * (Fprotein + kmask * Fmask)
 
         kiso, uaniso and kmask are stored for each resolution bin 
@@ -671,14 +671,18 @@ class SFcalculator(object):
                 index_i = (self.bins == bin_i)
                 ftotal_hkl[index_i] = self._calc_ftotal_bini(
                     bin_i, index_i, self.HKL_array, self.Fprotein_HKL, self.Fmask_HKL)
-            return ftotal_hkl
+            self.Ftotal_HKL = ftotal_hkl
+            if Return:
+                return ftotal_hkl
         else:
             ftotal_asu = torch.zeros_like(self.Fprotein_asu)
             for bin_i in range(self.n_bins):
                 index_i = (self.bins == bin_i)
                 ftotal_asu[index_i] = self._calc_ftotal_bini(
                     bin_i, index_i, self.Hasu_array, self.Fprotein_asu, self.Fmask_asu)
-            return ftotal_asu
+            self.Ftotal_asu = ftotal_asu
+            if Return:
+                return ftotal_asu
 
     def calc_fprotein_batch(self, atoms_position_batch, NO_Bfactor=False, Return=False, PARTITION=20):
         '''
@@ -781,24 +785,34 @@ class SFcalculator(object):
             self.Fmask_asu_batch = Fmask_batch
             if Return:
                 return self.Fmask_asu_batch
+            
+    def _calc_ftotal_batch_bini(self, bin_i, index_i, HKL_array, Fprotein, Fmask):
+        """calculate ftotal for bin i
+        """
+        scaled_fmask_i = Fmask[:, index_i] * self.kmasks[bin_i]
+        fmodel_i = self.kisos[bin_i] * DWF_aniso(self.uanisos[bin_i].unsqueeze(0), self.reciprocal_cell_paras, HKL_array[index_i])[
+            0] * (Fprotein[:, index_i] + scaled_fmask_i)
+        return fmodel_i
 
-    def calc_ftotal_batch(self):
+    def calc_ftotal_batch(self, Return=True):
         if not self.HKL_array is None:
-            dr2_tensor = torch.tensor(self.dr2HKL_array, device=try_gpu())
-            scaled_Fmask = self.ksol * self.Fmask_HKL_batch * \
-                torch.exp(-self.bsol * dr2_tensor/4.0)
-            self.Ftotal_HKL_batch = self.kall * \
-                DWF_aniso(self.kaniso[None, ...], self.reciprocal_cell_paras, self.HKL_array)[
-                    0] * (self.Fprotein_HKL_batch+scaled_Fmask)
-            return self.Ftotal_HKL_batch
+            ftotal_hkl_batch = torch.zeros_like(self.Fprotein_HKL_batch)
+            for bin_i in range(self.n_bins):
+                index_i = (self.bins == bin_i)
+                ftotal_hkl_batch[:, index_i] = self._calc_ftotal_batch_bini(
+                    bin_i, index_i, self.HKL_array, self.Fprotein_HKL_batch, self.Fmask_HKL_batch)
+            self.Ftotal_HKL_batch = ftotal_hkl_batch
+            if Return:
+                return ftotal_hkl_batch
         else:
-            dr2_tensor = torch.tensor(self.dr2asu_array, device=try_gpu())
-            scaled_Fmask = self.ksol * self.Fmask_asu_batch * \
-                torch.exp(-self.bsol * dr2_tensor/4.0)
-            self.Ftotal_asu_batch = self.kall * \
-                DWF_aniso(self.kaniso[None, ...], self.reciprocal_cell_paras, self.Hasu_array)[
-                    0] * (self.Fprotein_asu_batch+scaled_Fmask)
-            return self.Ftotal_asu_batch
+            ftotal_asu_batch = torch.zeros_like(self.Fprotein_asu_batch)
+            for bin_i in range(self.n_bins):
+                index_i = (self.bins == bin_i)
+                ftotal_asu_batch[index_i] = self._calc_ftotal_batch_bini(
+                    bin_i, index_i, self.Hasu_array, self.Fprotein_asu, self.Fmask_asu)
+            self.Ftotal_asu_batch = ftotal_asu_batch
+            if Return:
+                return ftotal_asu_batch
 
     def prepare_dataset(self, HKL_attr, F_attr):
         F_out = getattr(self, F_attr)
@@ -813,9 +827,9 @@ class SFcalculator(object):
         dataset["H"] = HKL_out[:, 0]
         dataset["K"] = HKL_out[:, 1]
         dataset["L"] = HKL_out[:, 2]
-        dataset["FMODEL"] = F_out_mag.cpu().numpy()
-        dataset["PHIFMODEL"] = F_out_phase.cpu().numpy()
-        dataset["FMODEL_COMPLEX"] = F_out.cpu().numpy()
+        dataset["FMODEL"] = assert_numpy(F_out_mag)
+        dataset["PHIFMODEL"] = assert_numpy(F_out_phase)
+        dataset["FMODEL_COMPLEX"] = assert_numpy(F_out)
         dataset.set_index(["H", "K", "L"], inplace=True)
         return dataset
 
