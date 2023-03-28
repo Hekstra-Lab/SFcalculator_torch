@@ -4,16 +4,25 @@ import numpy as np
 from .utils import try_gpu
 from .symmetry import asu2p1_torch
 
-def voxelvalue_torch_p1(unitcell_grid_center_orth, atom_pos_orth, unit_cell, space_group, vdw_rad_tensor,
-                        s=10., binary=True, cutoff=0.1):
-    '''
+
+def voxelvalue_torch_p1(
+    unitcell_grid_center_orth,
+    atom_pos_orth,
+    unit_cell,
+    space_group,
+    vdw_rad_tensor,
+    s=10.0,
+    binary=True,
+    cutoff=0.1,
+):
+    """
     Differentiably render atom coordinates into real space grid map value
     Va(d, ra) = 1 / (1 + exp(s*(d-ra)))
 
-    Apply all symmetry operations to an asu model then render the whole unit_cell 
+    Apply all symmetry operations to an asu model then render the whole unit_cell
 
     Reference:
-    Orlando, Gabriele, et al. "PyUUL provides an interface between biological 
+    Orlando, Gabriele, et al. "PyUUL provides an interface between biological
     structures and deep learning algorithms." Nature communications 13.1 (2022)
 
     Parameters
@@ -44,14 +53,22 @@ def voxelvalue_torch_p1(unitcell_grid_center_orth, atom_pos_orth, unit_cell, spa
     Returns
     -------
     voxel_value, tensor [N_grid,]
-    '''
-    sym_oped_atom_pos_orth_incell = asu2p1_torch(atom_pos_orth,
-                                              unit_cell, space_group,
-                                              incell=True, fractional=False)
-    voxel2atom_dist = torch.sqrt(torch.sum(torch.square(unitcell_grid_center_orth[:, None, None, :] - sym_oped_atom_pos_orth_incell[None, ...]),
-                                            dim=-1))
-    sigmoid_value = 1. / \
-        (1.+torch.exp(s*(voxel2atom_dist - vdw_rad_tensor[:, None])))
+    """
+    sym_oped_atom_pos_orth_incell = asu2p1_torch(
+        atom_pos_orth, unit_cell, space_group, incell=True, fractional=False
+    )
+    voxel2atom_dist = torch.sqrt(
+        torch.sum(
+            torch.square(
+                unitcell_grid_center_orth[:, None, None, :]
+                - sym_oped_atom_pos_orth_incell[None, ...]
+            ),
+            dim=-1,
+        )
+    )
+    sigmoid_value = 1.0 / (
+        1.0 + torch.exp(s * (voxel2atom_dist - vdw_rad_tensor[:, None]))
+    )
 
     voxel_value = torch.sum(sigmoid_value, dim=1)
     if binary:
@@ -60,19 +77,27 @@ def voxelvalue_torch_p1(unitcell_grid_center_orth, atom_pos_orth, unit_cell, spa
         return torch.sum(voxel_value, dim=-1)
 
 
-def voxelvalue_torch_p1_savememory(unitcell_grid_center_orth, atom_pos_orth, unit_cell, space_group, vdw_rad_tensor,
-                                s=10., binary=True, cutoff=0.1):
-    '''
+def voxelvalue_torch_p1_savememory(
+    unitcell_grid_center_orth,
+    atom_pos_orth,
+    unit_cell,
+    space_group,
+    vdw_rad_tensor,
+    s=10.0,
+    binary=True,
+    cutoff=0.1,
+):
+    """
     Differentiably render atom coordinates into real space grid map value
     Va(d, ra) = 1 / (1 + exp(s*(d-ra)))
 
     Apply all symmetry operations to an asu model then render the whole unit_cell
 
     Save-memory version, do some loops instead of fully vectorization
-    Useful when N_grid is super large 
+    Useful when N_grid is super large
 
     Reference:
-    Orlando, Gabriele, et al. "PyUUL provides an interface between biological 
+    Orlando, Gabriele, et al. "PyUUL provides an interface between biological
     structures and deep learning algorithms." Nature communications 13.1 (2022)
 
     Parameters
@@ -103,23 +128,29 @@ def voxelvalue_torch_p1_savememory(unitcell_grid_center_orth, atom_pos_orth, uni
     Returns
     -------
     1D voxel_value, tensor [N_grid,]
-    '''
-    sym_oped_atom_pos_orth_incell = asu2p1_torch(atom_pos_orth,
-                                                 unit_cell, space_group,
-                                                 incell=True, fractional=False)
+    """
+    sym_oped_atom_pos_orth_incell = asu2p1_torch(
+        atom_pos_orth, unit_cell, space_group, incell=True, fractional=False
+    )
     N_ops = len(sym_oped_atom_pos_orth_incell[0])
     voxel_map = torch.zeros([len(unitcell_grid_center_orth)], device=try_gpu())
     for i in range(N_ops):
         model_i = sym_oped_atom_pos_orth_incell[:, i, :]
-        voxel2atom_dist = torch.sqrt(torch.sum(torch.square(unitcell_grid_center_orth[:, None, :] - model_i[None, ...]),
-                                                dim=-1))
-        sigmoid_value = 1./(1.+torch.exp(s*(voxel2atom_dist - vdw_rad_tensor)))
+        voxel2atom_dist = torch.sqrt(
+            torch.sum(
+                torch.square(
+                    unitcell_grid_center_orth[:, None, :] - model_i[None, ...]
+                ),
+                dim=-1,
+            )
+        )
+        sigmoid_value = 1.0 / (1.0 + torch.exp(s * (voxel2atom_dist - vdw_rad_tensor)))
         voxel_value = torch.sum(sigmoid_value, dim=-1)
         if binary:
             map_i = torch.where(voxel_value > cutoff, 1.0, 0.0)
         else:
             map_i = voxel_value
-        
+
         if i == 0:
             voxel_map = map_i
         else:
@@ -129,7 +160,7 @@ def voxelvalue_torch_p1_savememory(unitcell_grid_center_orth, atom_pos_orth, uni
 
 
 def voxel_1dto3d_np(voxel_value_1d, na, nb, nc):
-    '''
+    """
     Convert the 1D voxel value array into 3D array and keep the order
 
     Parameters
@@ -139,7 +170,7 @@ def voxel_1dto3d_np(voxel_value_1d, na, nb, nc):
 
     na, nb, nc: int
         number of voxels along three axes
-    '''
+    """
     temp_3d = voxel_value_1d.reshape(nc, na, nb)
     voxel_value_3d = np.transpose(temp_3d, [1, 2, 0])
     return voxel_value_3d

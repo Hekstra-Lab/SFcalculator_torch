@@ -1,4 +1,4 @@
-'''
+"""
 Calculate Structural Factor from an atomic model: F_model = k_total * (F_calc + k_mask * F_mask)
 
 Note:
@@ -7,7 +7,7 @@ Note:
 3. We use a bulk solvent masking 
 
 Written in PyTorch
-'''
+"""
 
 __author__ = "Minhuan Li"
 __email__ = "minhuanli@g.harvard.edu"
@@ -27,20 +27,23 @@ from .utils import r_factor, assert_numpy
 
 
 class SFcalculator(object):
-    '''
+    """
     A class to formalize the structural factor calculation.
-    '''
+    """
 
-    def __init__(self, PDBfile_dir,
-                 mtzfile_dir=None,
-                 dmin=None,
-                 anomalous=False,
-                 wavelength=None,
-                 set_experiment=True,
-                 nansubset=['FP', 'SIGFP'],
-                 freeflag='FreeR_flag',
-                 testset_value=0):
-        '''
+    def __init__(
+        self,
+        PDBfile_dir,
+        mtzfile_dir=None,
+        dmin=None,
+        anomalous=False,
+        wavelength=None,
+        set_experiment=True,
+        nansubset=["FP", "SIGFP"],
+        freeflag="FreeR_flag",
+        testset_value=0,
+    ):
+        """
         Initialize with necessary reusable information, like spacegroup, unit cell info, HKL_list, et.c.
 
         Parameters:
@@ -67,11 +70,12 @@ class SFcalculator(object):
 
         nansubset: list of str, default ['FP', 'SIGFP']
             list of column names to examine the nan values
-        '''
+        """
         structure = gemmi.read_pdb(PDBfile_dir)  # gemmi.Structure object
         self.unit_cell = structure.cell  # gemmi.UnitCell object
         self.space_group = gemmi.SpaceGroup(
-            structure.spacegroup_hm)  # gemmi.SpaceGroup object
+            structure.spacegroup_hm
+        )  # gemmi.SpaceGroup object
         self.operations = self.space_group.operations()  # gemmi.GroupOps object
         self.wavelength = wavelength
         self.anomalous = anomalous
@@ -80,34 +84,44 @@ class SFcalculator(object):
             # Try to get the wavelength from PDB remarks
             try:
                 line_index = np.argwhere(
-                    ["WAVELENGTH OR RANGE" in i for i in structure.raw_remarks])
+                    ["WAVELENGTH OR RANGE" in i for i in structure.raw_remarks]
+                )
                 pdb_wavelength = eval(
-                    structure.raw_remarks[line_index[0, 0]].split()[-1])
+                    structure.raw_remarks[line_index[0, 0]].split()[-1]
+                )
                 if wavelength is not None:
                     assert np.isclose(pdb_wavelength, wavelength, atol=0.05)
                 else:
                     self.wavelength = pdb_wavelength
             except:
                 print(
-                    "Can't find wavelength record in the PDB file, or it doesn't match your input wavelength!")
+                    "Can't find wavelength record in the PDB file, or it doesn't match your input wavelength!"
+                )
 
-        self.R_G_tensor_stack = torch.tensor(np.array([
-            np.array(sym_op.rot)/sym_op.DEN for sym_op in self.operations]), device=try_gpu()).type(torch.float32)
-        self.T_G_tensor_stack = torch.tensor(np.array([
-            np.array(sym_op.tran)/sym_op.DEN for sym_op in self.operations]), device=try_gpu()).type(torch.float32)
+        self.R_G_tensor_stack = torch.tensor(
+            np.array([np.array(sym_op.rot) / sym_op.DEN for sym_op in self.operations]),
+            device=try_gpu(),
+        ).type(torch.float32)
+        self.T_G_tensor_stack = torch.tensor(
+            np.array(
+                [np.array(sym_op.tran) / sym_op.DEN for sym_op in self.operations]
+            ),
+            device=try_gpu(),
+        ).type(torch.float32)
 
         self.reciprocal_cell = self.unit_cell.reciprocal()  # gemmi.UnitCell object
         # [ar, br, cr, cos(alpha_r), cos(beta_r), cos(gamma_r)]
-        self.reciprocal_cell_paras = torch.tensor([self.reciprocal_cell.a,
-                                                   self.reciprocal_cell.b,
-                                                   self.reciprocal_cell.c,
-                                                   np.cos(np.deg2rad(
-                                                       self.reciprocal_cell.alpha)),
-                                                   np.cos(np.deg2rad(
-                                                       self.reciprocal_cell.beta)),
-                                                   np.cos(np.deg2rad(
-                                                       self.reciprocal_cell.gamma))
-                                                   ], device=try_gpu()).type(torch.float32)
+        self.reciprocal_cell_paras = torch.tensor(
+            [
+                self.reciprocal_cell.a,
+                self.reciprocal_cell.b,
+                self.reciprocal_cell.c,
+                np.cos(np.deg2rad(self.reciprocal_cell.alpha)),
+                np.cos(np.deg2rad(self.reciprocal_cell.beta)),
+                np.cos(np.deg2rad(self.reciprocal_cell.gamma)),
+            ],
+            device=try_gpu(),
+        ).type(torch.float32)
 
         # Generate ASU HKL array and Corresponding d*^2 array
         if mtzfile_dir:
@@ -115,52 +129,56 @@ class SFcalculator(object):
             try:
                 mtz_reference.dropna(axis=0, subset=nansubset, inplace=True)
             except:
-                raise ValueError(
-                    f"{nansubset} columns not included in the mtz file!")
+                raise ValueError(f"{nansubset} columns not included in the mtz file!")
             if anomalous:
                 # Try to get the wavelength from MTZ file
                 try:
                     mtz_wavelength = mtz_reference.dataset(0).wavelength
                     assert mtz_wavelength > 0.05
                     if self.wavelength is not None:
-                        assert np.isclose(
-                            mtz_wavelength, self.wavelength, atol=0.05)
+                        assert np.isclose(mtz_wavelength, self.wavelength, atol=0.05)
                     else:
                         self.wavelength = mtz_wavelength
                 except:
                     print(
-                        "Can't find wavelength record in the MTZ file, or it doesn't match with other sources")
+                        "Can't find wavelength record in the MTZ file, or it doesn't match with other sources"
+                    )
             # HKL array from the reference mtz file, [N,3]
             self.HKL_array = mtz_reference.get_hkls()
-            self.dHKL = self.unit_cell.calculate_d_array(
-                self.HKL_array).astype("float32")
+            self.dHKL = self.unit_cell.calculate_d_array(self.HKL_array).astype(
+                "float32"
+            )
             self.dmin = self.dHKL.min()
-            assert mtz_reference.cell == self.unit_cell, "Unit cell from mtz file does not match that in PDB file!"
+            assert (
+                mtz_reference.cell == self.unit_cell
+            ), "Unit cell from mtz file does not match that in PDB file!"
             assert mtz_reference.spacegroup.hm == self.space_group.hm, "Space group from mtz file does not match that in PDB file!"  # type: ignore
             self.Hasu_array = generate_reciprocal_asu(
-                self.unit_cell, self.space_group, self.dmin, anomalous=anomalous)
-            assert diff_array(self.HKL_array, self.Hasu_array) == set(
+                self.unit_cell, self.space_group, self.dmin, anomalous=anomalous
+            )
+            assert (
+                diff_array(self.HKL_array, self.Hasu_array) == set()
             ), "HKL_array should be equal or subset of the Hasu_array!"
             self.asu2HKL_index = asu2HKL(self.Hasu_array, self.HKL_array)
             # d*^2 array according to the HKL list, [N]
-            self.dr2asu_array = self.unit_cell.calculate_1_d2_array(
-                self.Hasu_array)
-            self.dr2HKL_array = self.unit_cell.calculate_1_d2_array(
-                self.HKL_array)
+            self.dr2asu_array = self.unit_cell.calculate_1_d2_array(self.Hasu_array)
+            self.dr2HKL_array = self.unit_cell.calculate_1_d2_array(self.HKL_array)
             if set_experiment:
                 self.set_experiment(mtz_reference, freeflag, testset_value)
         else:
             if not dmin:
                 raise ValueError(
-                    "high_resolution dmin OR a reference mtz file should be provided!")
+                    "high_resolution dmin OR a reference mtz file should be provided!"
+                )
             else:
                 self.dmin = dmin
                 self.Hasu_array = generate_reciprocal_asu(
-                    self.unit_cell, self.space_group, self.dmin)
-                self.dHasu = self.unit_cell.calculate_d_array(
-                    self.Hasu_array).astype("float32")
-                self.dr2asu_array = self.unit_cell.calculate_1_d2_array(
-                    self.Hasu_array)
+                    self.unit_cell, self.space_group, self.dmin
+                )
+                self.dHasu = self.unit_cell.calculate_d_array(self.Hasu_array).astype(
+                    "float32"
+                )
+                self.dr2asu_array = self.unit_cell.calculate_1_d2_array(self.Hasu_array)
                 self.HKL_array = None
 
         self.atom_name = []
@@ -179,7 +197,8 @@ class SFcalculator(object):
                     self.atom_pos_orth.append(atom.pos.tolist())
                     # A list of atom's Positions in fractional space, [Nc,3]
                     self.atom_pos_frac.append(
-                        self.unit_cell.fractionalize(atom.pos).tolist())
+                        self.unit_cell.fractionalize(atom.pos).tolist()
+                    )
                     # A list of anisotropic B Factor [[U11,U22,U33,U12,U13,U23],..], [Nc,6]
                     self.atom_b_aniso.append(atom.aniso.elements_pdb())
                     # A list of isotropic B Factor [B1,B2,...], [Nc]
@@ -187,70 +206,89 @@ class SFcalculator(object):
                     # A list of occupancy [P1,P2,....], [Nc]
                     self.atom_occ.append(atom.occ)
 
-        self.atom_pos_orth = torch.tensor(
-            self.atom_pos_orth, device=try_gpu()).type(torch.float32)
-        self.atom_pos_frac = torch.tensor(
-            self.atom_pos_frac, device=try_gpu()).type(torch.float32)
-        self.atom_b_aniso = torch.tensor(
-            self.atom_b_aniso, device=try_gpu()).type(torch.float32)
-        self.atom_b_iso = torch.tensor(
-            self.atom_b_iso, device=try_gpu()).type(torch.float32)
-        self.atom_occ = torch.tensor(
-            self.atom_occ, device=try_gpu()).type(torch.float32)
+        self.atom_pos_orth = torch.tensor(self.atom_pos_orth, device=try_gpu()).type(
+            torch.float32
+        )
+        self.atom_pos_frac = torch.tensor(self.atom_pos_frac, device=try_gpu()).type(
+            torch.float32
+        )
+        self.atom_b_aniso = torch.tensor(self.atom_b_aniso, device=try_gpu()).type(
+            torch.float32
+        )
+        self.atom_b_iso = torch.tensor(self.atom_b_iso, device=try_gpu()).type(
+            torch.float32
+        )
+        self.atom_occ = torch.tensor(self.atom_occ, device=try_gpu()).type(
+            torch.float32
+        )
         self.n_atoms = len(self.atom_name)
         self.unique_atom = list(set(self.atom_name))
 
         self.orth2frac_tensor = torch.tensor(
-            self.unit_cell.fractionalization_matrix.tolist(), device=try_gpu()).type(torch.float32)
+            self.unit_cell.fractionalization_matrix.tolist(), device=try_gpu()
+        ).type(torch.float32)
         self.frac2orth_tensor = torch.tensor(
-            self.unit_cell.orthogonalization_matrix.tolist(), device=try_gpu()).type(torch.float32)
+            self.unit_cell.orthogonalization_matrix.tolist(), device=try_gpu()
+        ).type(torch.float32)
 
         # A dictionary of atomic structural factor f0_sj of different atom types at different HKL Rupp's Book P280
         # f0_sj = [sum_{i=1}^4 {a_ij*exp(-b_ij* d*^2/4)} ] + c_j
         if anomalous:
             assert self.wavelength is not None, ValueError(
-                "If you need anomalous scattering contribution, provide the wavelength info from input, pbd or mtz file!")
+                "If you need anomalous scattering contribution, provide the wavelength info from input, pbd or mtz file!"
+            )
 
         self.full_atomic_sf_asu = {}
         for atom_type in self.unique_atom:
             element = gemmi.Element(atom_type)
-            f0 = np.array([element.it92.calculate_sf(dr2/4.)
-                          for dr2 in self.dr2asu_array])
+            f0 = np.array(
+                [element.it92.calculate_sf(dr2 / 4.0) for dr2 in self.dr2asu_array]
+            )
             if anomalous:
                 fp, fpp = gemmi.cromer_liberman(
-                    z=element.atomic_number, energy=gemmi.hc/self.wavelength)
-                self.full_atomic_sf_asu[atom_type] = f0 + fp + 1j*fpp
+                    z=element.atomic_number, energy=gemmi.hc / self.wavelength
+                )
+                self.full_atomic_sf_asu[atom_type] = f0 + fp + 1j * fpp
             else:
                 self.full_atomic_sf_asu[atom_type] = f0
 
         if anomalous:
-            self.fullsf_tensor = torch.tensor(np.array([
-                self.full_atomic_sf_asu[atom] for atom in self.atom_name]), device=try_gpu()).type(torch.complex64)
+            self.fullsf_tensor = torch.tensor(
+                np.array([self.full_atomic_sf_asu[atom] for atom in self.atom_name]),
+                device=try_gpu(),
+            ).type(torch.complex64)
         else:
-            self.fullsf_tensor = torch.tensor(np.array([
-                self.full_atomic_sf_asu[atom] for atom in self.atom_name]), device=try_gpu()).type(torch.float32)
+            self.fullsf_tensor = torch.tensor(
+                np.array([self.full_atomic_sf_asu[atom] for atom in self.atom_name]),
+                device=try_gpu(),
+            ).type(torch.float32)
         self.inspected = False
 
-    def set_experiment(self, exp_mtz, freeflag='FreeR_flag', testset_value=0):
-        '''
+    def set_experiment(self, exp_mtz, freeflag="FreeR_flag", testset_value=0):
+        """
         Set experimental data in the refinement
 
         exp_mtz, rs.Dataset, mtzfile read by reciprocalspaceship
-        '''
+        """
         try:
-            self.Fo = torch.tensor(
-                exp_mtz["FP"].to_numpy(), device=try_gpu()).type(torch.float32)
+            self.Fo = torch.tensor(exp_mtz["FP"].to_numpy(), device=try_gpu()).type(
+                torch.float32
+            )
             self.SigF = torch.tensor(
-                exp_mtz["SIGFP"].to_numpy(), device=try_gpu()).type(torch.float32)
+                exp_mtz["SIGFP"].to_numpy(), device=try_gpu()
+            ).type(torch.float32)
         except:
             print("MTZ file doesn't contain 'FP' or 'SIGFP'! Check your data!")
         try:
             self.free_flag = np.where(
-                exp_mtz[freeflag].values == testset_value, True, False)
+                exp_mtz[freeflag].values == testset_value, True, False
+            )
         except:
             print("No Free Flag! Check your data!")
 
-    def assign_resolution_bins(self, bins=10, Nmin=100, return_labels=True, format_str=".2f"):
+    def assign_resolution_bins(
+        self, bins=10, Nmin=100, return_labels=True, format_str=".2f"
+    ):
         """Assign reflections in HKL_array to resolution bins with logarithmic algorithm.
         The labels will be stored in self.bins
 
@@ -274,11 +312,13 @@ class SFcalculator(object):
         """
         if not self.HKL_array is None:
             assert hasattr(
-                self, "dHKL"), "Must have resolution stored in dHKL attribute!"
+                self, "dHKL"
+            ), "Must have resolution stored in dHKL attribute!"
             d = self.dHKL
         else:
             assert hasattr(
-                self, "dHasu"), "Must have resolution stored in dHKL attribute!"
+                self, "dHasu"
+            ), "Must have resolution stored in dHKL attribute!"
             d = self.dHasu
         assignments, edges = bin_by_logarithmic(d, bins, Nmin)
         self.n_bins = bins
@@ -291,18 +331,23 @@ class SFcalculator(object):
             return labels
 
     def inspect_data(self, verbose=True):
-        '''
-        Do an inspection of data, for hints about 
+        """
+        Do an inspection of data, for hints about
         1. solvent percentage for mask calculation
-        2. suitable grid size 
-        '''
+        2. suitable grid size
+        """
         # solvent percentage
         vdw_rad = vdw_rad_tensor(self.atom_name)
-        uc_grid_orth_tensor = unitcell_grid_center(self.unit_cell,
-                                                   spacing=4.5,
-                                                   return_tensor=True)
+        uc_grid_orth_tensor = unitcell_grid_center(
+            self.unit_cell, spacing=4.5, return_tensor=True
+        )
         occupancy, _ = packingscore_voxelgrid_torch(
-            self.atom_pos_orth, self.unit_cell, self.space_group, vdw_rad, uc_grid_orth_tensor)
+            self.atom_pos_orth,
+            self.unit_cell,
+            self.space_group,
+            vdw_rad,
+            uc_grid_orth_tensor,
+        )
         self.solventpct = 1 - occupancy
         # grid size
         mtz = gemmi.Mtz(with_base=True)
@@ -318,13 +363,16 @@ class SFcalculator(object):
             print("Grid size:", self.gridsize)
         self.inspected = True
 
-    def calc_fprotein(self, atoms_position_tensor=None,
-                      atoms_biso_tensor=None,
-                      atoms_baniso_tensor=None,
-                      atoms_occ_tensor=None,
-                      NO_Bfactor=False,
-                      Return=False):
-        '''
+    def calc_fprotein(
+        self,
+        atoms_position_tensor=None,
+        atoms_biso_tensor=None,
+        atoms_baniso_tensor=None,
+        atoms_occ_tensor=None,
+        NO_Bfactor=False,
+        Return=False,
+    ):
+        """
         Calculate the structural factor from a single atomic model, without solvent masking
 
         Parameters
@@ -350,36 +398,47 @@ class SFcalculator(object):
         Returns
         -------
         None (Return=False) or Fprotein (Return=True)
-        '''
+        """
         # Read and tensor-fy necessary inforamtion
         if not atoms_position_tensor is None:
-            assert len(
-                atoms_position_tensor) == self.n_atoms, "Atoms in atoms_positions_tensor should be consistent with atom names in PDB model!"
+            assert (
+                len(atoms_position_tensor) == self.n_atoms
+            ), "Atoms in atoms_positions_tensor should be consistent with atom names in PDB model!"
             self.atom_pos_frac = torch.tensordot(
-                atoms_position_tensor, self.orth2frac_tensor.T, 1)
+                atoms_position_tensor, self.orth2frac_tensor.T, 1
+            )
 
         if not atoms_baniso_tensor is None:
             assert len(atoms_baniso_tensor) == len(
-                self.atom_name), "Atoms in atoms_baniso_tensor should be consistent with atom names in PDB model!"
+                self.atom_name
+            ), "Atoms in atoms_baniso_tensor should be consistent with atom names in PDB model!"
             self.atom_b_aniso = atoms_baniso_tensor
 
         if not atoms_biso_tensor is None:
             assert len(atoms_biso_tensor) == len(
-                self.atom_name), "Atoms in atoms_biso_tensor should be consistent with atom names in PDB model!"
+                self.atom_name
+            ), "Atoms in atoms_biso_tensor should be consistent with atom names in PDB model!"
             self.atom_b_iso = atoms_biso_tensor
 
         if not atoms_occ_tensor is None:
             assert len(atoms_occ_tensor) == len(
-                self.atom_name), "Atoms in atoms_occ_tensor should be consistent with atom names in PDB model!"
+                self.atom_name
+            ), "Atoms in atoms_occ_tensor should be consistent with atom names in PDB model!"
             self.atom_occ = atoms_occ_tensor
 
-        self.Fprotein_asu = F_protein(self.Hasu_array, self.dr2asu_array,
-                                      self.fullsf_tensor,
-                                      self.reciprocal_cell_paras,
-                                      self.R_G_tensor_stack, self.T_G_tensor_stack,
-                                      self.atom_pos_frac,
-                                      self.atom_b_iso, self.atom_b_aniso, self.atom_occ,
-                                      NO_Bfactor=NO_Bfactor)
+        self.Fprotein_asu = F_protein(
+            self.Hasu_array,
+            self.dr2asu_array,
+            self.fullsf_tensor,
+            self.reciprocal_cell_paras,
+            self.R_G_tensor_stack,
+            self.T_G_tensor_stack,
+            self.atom_pos_frac,
+            self.atom_b_iso,
+            self.atom_b_aniso,
+            self.atom_occ,
+            NO_Bfactor=NO_Bfactor,
+        )
         if not self.HKL_array is None:
             self.Fprotein_HKL = self.Fprotein_asu[self.asu2HKL_index]
             if Return:
@@ -388,14 +447,21 @@ class SFcalculator(object):
             if Return:
                 return self.Fprotein_asu
 
-    def calc_fsolvent(self, solventpct=None, gridsize=None, dmin_mask=6.0, Return=False, dmin_nonzero=3.0):
-        '''
+    def calc_fsolvent(
+        self,
+        solventpct=None,
+        gridsize=None,
+        dmin_mask=6.0,
+        Return=False,
+        dmin_nonzero=3.0,
+    ):
+        """
         Calculate the structure factor of solvent mask in a differentiable way
 
         Parameters
         ----------
         solventpct: 0 - 1 Float, default None
-            An approximate value of volume percentage of solvent in the unitcell. 
+            An approximate value of volume percentage of solvent in the unitcell.
             run `inspect_data` before to use a suggested value
 
         gridsize: [Int, Int, Int], default None
@@ -407,10 +473,12 @@ class SFcalculator(object):
 
         Return: Boolean, default False
             If True, it will return the Fmask as the function output; Or It will just be saved in the `Fmask_asu` and `Fmask_HKL` attributes
-        '''
+        """
 
         if solventpct is None:
-            assert self.inspected, "Run inspect_data first or give a valid solvent percentage!"
+            assert (
+                self.inspected
+            ), "Run inspect_data first or give a valid solvent percentage!"
             solventpct = self.solventpct
 
         if gridsize is None:
@@ -419,32 +487,37 @@ class SFcalculator(object):
 
         # Shape [N_HKL_p1, 3], [N_HKL_p1,]
         Hp1_array, Fp1_tensor = expand_to_p1(
-            self.space_group, self.Hasu_array, self.Fprotein_asu,
-            dmin_mask=dmin_mask, unitcell=self.unit_cell, anomalous=self.anomalous)
+            self.space_group,
+            self.Hasu_array,
+            self.Fprotein_asu,
+            dmin_mask=dmin_mask,
+            unitcell=self.unit_cell,
+            anomalous=self.anomalous,
+        )
         rs_grid = reciprocal_grid(Hp1_array, Fp1_tensor, gridsize)
         self.real_grid_mask = rsgrid2realmask(
-            rs_grid, solvent_percent=solventpct)  # type: ignore
+            rs_grid, solvent_percent=solventpct
+        )  # type: ignore
         if not self.HKL_array is None:
-            self.Fmask_HKL = realmask2Fmask(
-                self.real_grid_mask, self.HKL_array)
-            zero_hkl_bool = torch.tensor(
-                self.dHKL <= dmin_nonzero, device=try_gpu())
+            self.Fmask_HKL = realmask2Fmask(self.real_grid_mask, self.HKL_array)
+            zero_hkl_bool = torch.tensor(self.dHKL <= dmin_nonzero, device=try_gpu())
             self.Fmask_HKL[zero_hkl_bool] = torch.tensor(
-                0., device=try_gpu(), dtype=torch.complex64)
+                0.0, device=try_gpu(), dtype=torch.complex64
+            )
             if Return:
                 return self.Fmask_HKL
         else:
-            self.Fmask_asu = realmask2Fmask(
-                self.real_grid_mask, self.Hasu_array)
-            zero_hkl_bool = torch.tensor(
-                self.dHasu <= dmin_nonzero, device=try_gpu())
+            self.Fmask_asu = realmask2Fmask(self.real_grid_mask, self.Hasu_array)
+            zero_hkl_bool = torch.tensor(self.dHasu <= dmin_nonzero, device=try_gpu())
             self.Fmask_asu[zero_hkl_bool] = torch.tensor(
-                0., device=try_gpu(), dtype=torch.complex64)
+                0.0, device=try_gpu(), dtype=torch.complex64
+            )
             if Return:
                 return self.Fmask_asu
 
     def _init_kmask_kiso(self, requires_grad=True):
-        """Use the root finding approach discussed to initialize kmask and kiso per resolution bin
+        """
+        Use the root finding approach discussed to initialize kmask and kiso per resolution bin
         Afonine, P. V., et al. Acta Crystallographica Section D: Biological Crystallography 69.4 (2013): 625-634.
 
         Note: Only work when you have mtz data, self.Fo
@@ -453,8 +526,10 @@ class SFcalculator(object):
         kmasks = []
         kisos = []
         ws = torch.abs(self.Fmask_HKL).pow(2)
-        vs = 0.5*torch.real(self.Fprotein_HKL.conj()*self.Fmask_HKL +
-                        self.Fprotein_HKL*self.Fmask_HKL.conj())
+        vs = 0.5 * torch.real(
+            self.Fprotein_HKL.conj() * self.Fmask_HKL
+            + self.Fprotein_HKL * self.Fmask_HKL.conj()
+        )
         us = torch.abs(self.Fprotein_HKL).pow(2)
         Is = self.Fo.pow(2)
 
@@ -462,26 +537,26 @@ class SFcalculator(object):
             index_i = (~self.free_flag) & (self.bins == bin_i)
 
             C2 = torch.sum(ws[index_i] * Is[index_i])
-            B2 = 2.*torch.sum(vs[index_i] * Is[index_i])
+            B2 = 2.0 * torch.sum(vs[index_i] * Is[index_i])
             A2 = torch.sum(us[index_i] * Is[index_i])
             Y2 = torch.sum(Is[index_i].pow(2))
             # They made this wrong in their original paper
             D3 = torch.sum(ws[index_i].pow(2))
-            C3 = 3.*torch.sum(ws[index_i]*vs[index_i])
-            B3 = torch.sum(2*vs[index_i].pow(2) + us[index_i]*ws[index_i])
-            A3 = torch.sum(us[index_i]*vs[index_i])
-            Y3 = torch.sum(Is[index_i]*vs[index_i])
+            C3 = 3.0 * torch.sum(ws[index_i] * vs[index_i])
+            B3 = torch.sum(2 * vs[index_i].pow(2) + us[index_i] * ws[index_i])
+            A3 = torch.sum(us[index_i] * vs[index_i])
+            Y3 = torch.sum(Is[index_i] * vs[index_i])
 
-            a = assert_numpy((C3*Y2 - C2*B2 - C2*Y3)/(D3*Y2 - C2**2))
-            b = assert_numpy((B3*Y2 - C2*A2 - Y3*B2)/(D3*Y2 - C2**2))
-            c = assert_numpy((A3*Y2 - Y3*A2)/(D3*Y2 - C2**2))
+            a = assert_numpy((C3 * Y2 - C2 * B2 - C2 * Y3) / (D3 * Y2 - C2**2))
+            b = assert_numpy((B3 * Y2 - C2 * A2 - Y3 * B2) / (D3 * Y2 - C2**2))
+            c = assert_numpy((A3 * Y2 - Y3 * A2) / (D3 * Y2 - C2**2))
 
             try:
                 roots = np.roots([1.0, a, b, c])
             except:
                 # In case no nonzero Fmask observations for this resolution bin
                 kmask = torch.tensor(1e-4).to(C2)
-                K_temp = (kmask.pow(2)*C2 + kmask*B2 + A2)/Y2
+                K_temp = (kmask.pow(2) * C2 + kmask * B2 + A2) / Y2
                 kiso = torch.sqrt(K_temp).reciprocal()
                 kmasks.append(kmask.requires_grad_())
                 kisos.append(kiso.requires_grad_())
@@ -495,23 +570,29 @@ class SFcalculator(object):
                 if np.iscomplex(root) or (root < 0):
                     kmask_temp = torch.tensor(0.0001).to(C2)
                 else:
-                    kmask_temp = torch.tensor(
-                        np.real_if_close(root, tol=1000)).to(C2)
-                K_temp = (kmask_temp.pow(2)*C2 + kmask_temp*B2 + A2)/Y2
+                    kmask_temp = torch.tensor(np.real_if_close(root, tol=1000)).to(C2)
+                K_temp = (kmask_temp.pow(2) * C2 + kmask_temp * B2 + A2) / Y2
                 if K_temp < 0.0:
                     kmask_temp = torch.tensor(1.0).to(C2)
-                LS_temp = torch.sum(torch.abs(
-                    self.Fprotein_HKL[index_i] + kmask_temp*self.Fmask_HKL[index_i]).pow(2) - K_temp*Is[index_i]).pow(2)
-                LSpp_temp = 3*kmask_temp.pow(2)*D3 + \
-                    2*kmask_temp*C3 + B3 - C2*K_temp
+                LS_temp = torch.sum(
+                    torch.abs(
+                        self.Fprotein_HKL[index_i]
+                        + kmask_temp * self.Fmask_HKL[index_i]
+                    ).pow(2)
+                    - K_temp * Is[index_i]
+                ).pow(2)
+                LSpp_temp = (
+                    3 * kmask_temp.pow(2) * D3 + 2 * kmask_temp * C3 + B3 - C2 * K_temp
+                )
                 kmask_candidates[i] = kmask_temp
                 # Note, K should be positive too
                 K_candidates[i] = K_temp
                 LSpp_candidates[i] = LSpp_temp
                 LS_candidates[i] = LS_temp
 
-            legitimacy = (roots > 0) & np.isreal(roots) & (
-                assert_numpy(LSpp_candidates) > 0)
+            legitimacy = (
+                (roots > 0) & np.isreal(roots) & (assert_numpy(LSpp_candidates) > 0)
+            )
             if (np.sum(legitimacy) > 0) and (np.sum(legitimacy) < 3):
                 kmask_candidates = kmask_candidates[legitimacy]
                 LS_candidates = LS_candidates[legitimacy]
@@ -527,7 +608,8 @@ class SFcalculator(object):
         return kmasks, kisos
 
     def _init_uaniso(self, requires_grad=True):
-        """Use the analytical solutuon discussed to initialize Uaniso per resolution bin
+        """
+        Use the analytical solutuon discussed to initialize Uaniso per resolution bin
         Afonine, P. V., et al. Acta Crystallographica Section D: Biological Crystallography 69.4 (2013): 625-634.
 
         Note: Only work when you have mtz data, self.Fo
@@ -536,41 +618,58 @@ class SFcalculator(object):
         for bin_i in np.sort(np.unique(self.bins)):
             index_i = (~self.free_flag) & (self.bins == bin_i)
             s = self.HKL_array[index_i]
-            V = np.concatenate(
-                [s**2, 2*s[:, [0, 2, 1]]*s[:, [1, 0, 2]]], axis=-1)
-            Z = assert_numpy(torch.log(self.Fo[index_i]/(self.kisos[bin_i]*torch.abs(
-                self.Fprotein_HKL[index_i] +
-                self.kmasks[bin_i]*self.Fmask_HKL[index_i])))/(2.0*np.pi**2))
-            M = V.T @ V # M = np.einsum("ki,kj->ij", V, V)
-            b = -np.sum(Z*V.T, axis=-1)
+            V = np.concatenate([s**2, 2 * s[:, [0, 2, 1]] * s[:, [1, 0, 2]]], axis=-1)
+            Z = assert_numpy(
+                torch.log(
+                    self.Fo[index_i]
+                    / (
+                        self.kisos[bin_i]
+                        * torch.abs(
+                            self.Fprotein_HKL[index_i]
+                            + self.kmasks[bin_i] * self.Fmask_HKL[index_i]
+                        )
+                    )
+                )
+                / (2.0 * np.pi**2)
+            )
+            M = V.T @ V  # M = np.einsum("ki,kj->ij", V, V)
+            b = -np.sum(Z * V.T, axis=-1)
             U = np.linalg.inv(M) @ b
-            uanisos.append(torch.tensor(U).to(
-                self.Fo).requires_grad_(requires_grad))
+            uanisos.append(torch.tensor(U).to(self.Fo).requires_grad_(requires_grad))
         return uanisos
 
-    def _set_scales(self, requires_grad, kiso=1.0, kmask=0.35, uaniso=[0.01, 0.01, 0.01, 1e-4, 1e-4, 1e-4]):
-        """Only used for case you don't have data
-        """
-        self.kmasks = [torch.tensor(kmask).to(
-            self.atom_pos_frac).requires_grad_(requires_grad)] * self.n_bins
-        self.kisos = [torch.tensor(kiso).to(
-            self.atom_pos_frac).requires_grad_(requires_grad)] * self.n_bins
-        self.uanisos = [torch.tensor(uaniso).to(
-            self.atom_pos_frac).requires_grad_(requires_grad)] * self.n_bins
+    def _set_scales(
+        self,
+        requires_grad,
+        kiso=1.0,
+        kmask=0.35,
+        uaniso=[0.01, 0.01, 0.01, 1e-4, 1e-4, 1e-4],
+    ):
+        """Only used for case you don't have data"""
+        self.kmasks = [
+            torch.tensor(kmask).to(self.atom_pos_frac).requires_grad_(requires_grad)
+        ] * self.n_bins
+        self.kisos = [
+            torch.tensor(kiso).to(self.atom_pos_frac).requires_grad_(requires_grad)
+        ] * self.n_bins
+        self.uanisos = [
+            torch.tensor(uaniso).to(self.atom_pos_frac).requires_grad_(requires_grad)
+        ] * self.n_bins
 
     def init_scales(self, requires_grad=True):
-        if hasattr(self, 'Fo'):
-            self.kmasks, self.kisos = self._init_kmask_kiso(
-                requires_grad=requires_grad)
+        if hasattr(self, "Fo"):
+            self.kmasks, self.kisos = self._init_kmask_kiso(requires_grad=requires_grad)
             self.uanisos = self._init_uaniso(requires_grad=requires_grad)
         else:
             self._set_scales(requires_grad)
 
-    def _get_scales_lbfgs_LS(self, n_steps=3, lr=0.1, verbose=True, initialize=True, return_loss=False):
-        '''
+    def _get_scales_lbfgs_LS(
+        self, n_steps=3, lr=0.1, verbose=True, initialize=True, return_loss=False
+    ):
+        """
         Use LBFGS to optimize scales with least square error
-        '''
-        assert hasattr(self, 'Fo'), "No experimental data Fo!"
+        """
+        assert hasattr(self, "Fo"), "No experimental data Fo!"
 
         if initialize:
             self.init_scales(requires_grad=True)
@@ -580,7 +679,8 @@ class SFcalculator(object):
             Fmodel_mag = torch.abs(Fmodel)
             # LS loss
             loss = torch.sum(
-                (self.Fo[~self.free_flag] - Fmodel_mag[~self.free_flag])**2)
+                (self.Fo[~self.free_flag] - Fmodel_mag[~self.free_flag]) ** 2
+            )
             self.lbfgs.zero_grad()
             loss.backward()
             return loss
@@ -593,23 +693,28 @@ class SFcalculator(object):
             loss = self.lbfgs.step(closure)
             Fmodel = self.calc_ftotal()
             Fmodel_mag = torch.abs(Fmodel)
-            r_work, r_free = r_factor(
-                self.Fo, Fmodel_mag, self.free_flag)
+            r_work, r_free = r_factor(self.Fo, Fmodel_mag, self.free_flag)
             loss_track.append(
-                [assert_numpy(loss), assert_numpy(r_work), assert_numpy(r_free)])
+                [assert_numpy(loss), assert_numpy(r_work), assert_numpy(r_free)]
+            )
             str_ = f"Time: {time.time()-start_time:.3f}"
             if verbose:
                 print(
-                    f"Scale, {loss_track[-1][0]:.3f}, {loss_track[-1][1]:.3f}, {loss_track[-1][2]:.3f}", str_, flush=True)
+                    f"Scale, {loss_track[-1][0]:.3f}, {loss_track[-1][1]:.3f}, {loss_track[-1][2]:.3f}",
+                    str_,
+                    flush=True,
+                )
         self.r_work, self.r_free = r_work, r_free
         if return_loss:
             return loss_track
 
-    def _get_scales_lbfgs_r(self, n_steps=5, lr=0.1, verbose=True, initialize=True, return_loss=False):
-        '''
+    def _get_scales_lbfgs_r(
+        self, n_steps=5, lr=0.1, verbose=True, initialize=True, return_loss=False
+    ):
+        """
         Use LBFGS to optimize scales directly with r factor error
-        '''
-        assert hasattr(self, 'Fo'), "No experimental data Fo!"
+        """
+        assert hasattr(self, "Fo"), "No experimental data Fo!"
 
         if initialize:
             self.init_scales(requires_grad=True)
@@ -619,7 +724,8 @@ class SFcalculator(object):
             Fmodel_mag = torch.abs(Fmodel)
             # R factor
             loss = torch.sum(
-                torch.abs(self.Fo[~self.free_flag] - Fmodel_mag[~self.free_flag]))/torch.sum(self.Fo[~self.free_flag])
+                torch.abs(self.Fo[~self.free_flag] - Fmodel_mag[~self.free_flag])
+            ) / torch.sum(self.Fo[~self.free_flag])
             self.lbfgs.zero_grad()
             loss.backward()
             return loss
@@ -632,60 +738,89 @@ class SFcalculator(object):
             loss = self.lbfgs.step(closure)
             Fmodel = self.calc_ftotal()
             Fmodel_mag = torch.abs(Fmodel)
-            r_work, r_free = r_factor(
-                self.Fo, Fmodel_mag, self.free_flag)
+            r_work, r_free = r_factor(self.Fo, Fmodel_mag, self.free_flag)
             loss_track.append(
-                [assert_numpy(loss), assert_numpy(r_work), assert_numpy(r_free)])
+                [assert_numpy(loss), assert_numpy(r_work), assert_numpy(r_free)]
+            )
             str_ = f"Time: {time.time()-start_time:.3f}"
             if verbose:
                 print(
-                    f"Scale, {loss_track[-1][0]:.3f}, {loss_track[-1][1]:.3f}, {loss_track[-1][2]:.3f}", str_, flush=True)
+                    f"Scale, {loss_track[-1][0]:.3f}, {loss_track[-1][1]:.3f}, {loss_track[-1][2]:.3f}",
+                    str_,
+                    flush=True,
+                )
         self.r_work, self.r_free = r_work, r_free
         if return_loss:
             return loss_track
-        
-    def get_scales_lbfgs(self, ls_steps=3, r_steps=3, ls_lr=0.1, r_lr=0.1, initialize=True, verbose=True):
+
+    def get_scales_lbfgs(
+        self, ls_steps=3, r_steps=3, ls_lr=0.1, r_lr=0.1, initialize=True, verbose=True
+    ):
         self._get_scales_lbfgs_LS(ls_steps, ls_lr, verbose, initialize)
         self._get_scales_lbfgs_r(r_steps, r_lr, verbose, initialize=False)
 
     def _calc_ftotal_bini(self, bin_i, index_i, HKL_array, Fprotein, Fmask):
-        """calculate ftotal for bin i
+        """
+        calculate ftotal for bin i
         """
         scaled_fmask_i = Fmask[index_i] * self.kmasks[bin_i]
-        fmodel_i = self.kisos[bin_i] * DWF_aniso(self.uanisos[bin_i].unsqueeze(0), self.reciprocal_cell_paras, HKL_array[index_i])[
-            0] * (Fprotein[index_i] + scaled_fmask_i)
+        fmodel_i = (
+            self.kisos[bin_i]
+            * DWF_aniso(
+                self.uanisos[bin_i].unsqueeze(0),
+                self.reciprocal_cell_paras,
+                HKL_array[index_i],
+            )[0]
+            * (Fprotein[index_i] + scaled_fmask_i)
+        )
         return fmodel_i
 
-    def calc_ftotal(self, Return=True):
-        """Calculate Ftotal = kiso * exp(-2*pi^2*s^T*Uaniso*s) * (Fprotein + kmask * Fmask)
+    def calc_ftotal(self, bins=None, Return=True):
+        """
+        Calculate Ftotal = kiso * exp(-2*pi^2*s^T*Uaniso*s) * (Fprotein + kmask * Fmask)
 
-        kiso, uaniso and kmask are stored for each resolution bin 
+        kiso, uaniso and kmask are stored for each resolution bin
+
+        Parameters
+        ----------
+        bins: None or List[int], default None
+            Specify which resolution bins to calculate the ftotal, if None, calculate for all
+
+        Return: Boolean, default True
+            Whether to return the results
 
         Returns
         -------
         torch.tensor, complex
         """
+        if bins is None:
+            bins = range(self.n_bins)
+
         if not self.HKL_array is None:
             ftotal_hkl = torch.zeros_like(self.Fprotein_HKL)
-            for bin_i in range(self.n_bins):
-                index_i = (self.bins == bin_i)
+            for bin_i in bins:
+                index_i = self.bins == bin_i
                 ftotal_hkl[index_i] = self._calc_ftotal_bini(
-                    bin_i, index_i, self.HKL_array, self.Fprotein_HKL, self.Fmask_HKL)
+                    bin_i, index_i, self.HKL_array, self.Fprotein_HKL, self.Fmask_HKL
+                )
             self.Ftotal_HKL = ftotal_hkl
             if Return:
                 return ftotal_hkl
         else:
             ftotal_asu = torch.zeros_like(self.Fprotein_asu)
-            for bin_i in range(self.n_bins):
-                index_i = (self.bins == bin_i)
+            for bin_i in bins:
+                index_i = self.bins == bin_i
                 ftotal_asu[index_i] = self._calc_ftotal_bini(
-                    bin_i, index_i, self.Hasu_array, self.Fprotein_asu, self.Fmask_asu)
+                    bin_i, index_i, self.Hasu_array, self.Fprotein_asu, self.Fmask_asu
+                )
             self.Ftotal_asu = ftotal_asu
             if Return:
                 return ftotal_asu
 
-    def calc_fprotein_batch(self, atoms_position_batch, NO_Bfactor=False, Return=False, PARTITION=20):
-        '''
+    def calc_fprotein_batch(
+        self, atoms_position_batch, NO_Bfactor=False, Return=False, PARTITION=20
+    ):
+        """
         Calculate the Fprotein with batched models. Most parameters are similar to `Calc_Fprotein`
 
         atoms_positions_batch: torch.float32 tensor, [N_batch, N_atoms, 3]
@@ -694,43 +829,59 @@ class SFcalculator(object):
             To reduce the memory cost during the computation, we divide the batch into several partitions and loops through them.
             Larger PARTITION will require larger GPU memory. Default 20 will take around 4GB, if N_atoms~1600 and N_HKLs~13000.
             But larger PARTITION will give a smaller wall time, so this is a trade-off.
-        '''
+        """
         # Read and tensor-fy necessary information
         atom_pos_frac_batch = torch.tensordot(
-            atoms_position_batch, self.orth2frac_tensor.T, 1)  # [N_batch, N_atoms, N_dim=3]
+            atoms_position_batch, self.orth2frac_tensor.T, 1
+        )  # [N_batch, N_atoms, N_dim=3]
 
-        self.Fprotein_asu_batch = F_protein_batch(self.Hasu_array, self.dr2asu_array,
-                                                  self.fullsf_tensor,
-                                                  self.reciprocal_cell_paras,
-                                                  self.R_G_tensor_stack, self.T_G_tensor_stack,
-                                                  atom_pos_frac_batch,
-                                                  self.atom_b_iso, self.atom_b_aniso, self.atom_occ,
-                                                  NO_Bfactor=NO_Bfactor,
-                                                  PARTITION=PARTITION)  # [N_batch, N_Hasus]
+        self.Fprotein_asu_batch = F_protein_batch(
+            self.Hasu_array,
+            self.dr2asu_array,
+            self.fullsf_tensor,
+            self.reciprocal_cell_paras,
+            self.R_G_tensor_stack,
+            self.T_G_tensor_stack,
+            atom_pos_frac_batch,
+            self.atom_b_iso,
+            self.atom_b_aniso,
+            self.atom_occ,
+            NO_Bfactor=NO_Bfactor,
+            PARTITION=PARTITION,
+        )  # [N_batch, N_Hasus]
 
         if not self.HKL_array is None:
             # type: ignore
-            self.Fprotein_HKL_batch = self.Fprotein_asu_batch[:,
-                                                              self.asu2HKL_index]
+            self.Fprotein_HKL_batch = self.Fprotein_asu_batch[:, self.asu2HKL_index]
             if Return:
                 return self.Fprotein_HKL_batch
         else:
             if Return:
                 return self.Fprotein_asu_batch
 
-    def calc_fsolvent_batch(self, solventpct=None, gridsize=None, dmin_mask=6, Return=False, PARTITION=100, dmin_nonzero=3.0):
-        '''
+    def calc_fsolvent_batch(
+        self,
+        solventpct=None,
+        gridsize=None,
+        dmin_mask=6,
+        Return=False,
+        PARTITION=100,
+        dmin_nonzero=3.0,
+    ):
+        """
         Should run after Calc_Fprotein_batch, calculate the solvent mask structure factors in batched manner
         most parameters are similar to `Calc_Fmask`
 
         PARTITION: Int, default 100
             To reduce the memory cost during the computation, we divide the batch into several partitions and loops through them.
             Larger PARTITION will require larger GPU memory. Default 100 will take around 15GB, if gridsize=[160,160,160].
-            But larger PARTITION will give a smaller wall time, so this is a trade-off. 
-        '''
+            But larger PARTITION will give a smaller wall time, so this is a trade-off.
+        """
 
         if solventpct is None:
-            assert self.inspected, "Run inspect_data first or give a valid solvent percentage!"
+            assert (
+                self.inspected
+            ), "Run inspect_data first or give a valid solvent percentage!"
             solventpct = self.solventpct
 
         if gridsize is None:
@@ -738,12 +889,17 @@ class SFcalculator(object):
             gridsize = self.gridsize
 
         Hp1_array, Fp1_tensor_batch = expand_to_p1(
-            self.space_group, self.Hasu_array, self.Fprotein_asu_batch,
-            dmin_mask=dmin_mask, Batch=True, unitcell=self.unit_cell)
+            self.space_group,
+            self.Hasu_array,
+            self.Fprotein_asu_batch,
+            dmin_mask=dmin_mask,
+            Batch=True,
+            unitcell=self.unit_cell,
+        )
 
         batchsize = self.Fprotein_asu_batch.shape[0]  # type: ignore
         N_partition = batchsize // PARTITION + 1
-        Fmask_batch = 0.
+        Fmask_batch = 0.0
 
         if not self.HKL_array is None:
             HKL_array = self.HKL_array
@@ -751,65 +907,99 @@ class SFcalculator(object):
             HKL_array = self.Hasu_array
 
         for j in range(N_partition):
-            if j*PARTITION >= batchsize:
+            if j * PARTITION >= batchsize:
                 continue
-            start = j*PARTITION
-            end = min((j+1)*PARTITION, batchsize)
+            start = j * PARTITION
+            end = min((j + 1) * PARTITION, batchsize)
             # Shape [N_batch, *gridsize]
             rs_grid = reciprocal_grid(
-                Hp1_array, Fp1_tensor_batch[start:end], gridsize, end-start)
+                Hp1_array, Fp1_tensor_batch[start:end], gridsize, end - start
+            )
             real_grid_mask = rsgrid2realmask(
-                rs_grid, solvent_percent=solventpct, Batch=True)  # type: ignore
-            Fmask_batch_j = realmask2Fmask(
-                real_grid_mask, HKL_array, end-start)
+                rs_grid, solvent_percent=solventpct, Batch=True
+            )  # type: ignore
+            Fmask_batch_j = realmask2Fmask(real_grid_mask, HKL_array, end - start)
             if j == 0:
                 Fmask_batch = Fmask_batch_j
             else:
                 # Shape [N_batches, N_HKLs]
                 Fmask_batch = torch.concat(
-                    (Fmask_batch, Fmask_batch_j), dim=0)  # type: ignore
+                    (Fmask_batch, Fmask_batch_j), dim=0
+                )  # type: ignore
 
         if not self.HKL_array is None:
-            zero_hkl_bool = torch.tensor(
-                self.dHKL <= dmin_nonzero, device=try_gpu())
+            zero_hkl_bool = torch.tensor(self.dHKL <= dmin_nonzero, device=try_gpu())
             Fmask_batch[:, zero_hkl_bool] = torch.tensor(
-                0., device=try_gpu(), dtype=torch.complex64)  # type: ignore
+                0.0, device=try_gpu(), dtype=torch.complex64
+            )  # type: ignore
             self.Fmask_HKL_batch = Fmask_batch
             if Return:
                 return self.Fmask_HKL_batch
         else:
-            zero_hkl_bool = torch.tensor(
-                self.dHasu <= dmin_nonzero, device=try_gpu())
+            zero_hkl_bool = torch.tensor(self.dHasu <= dmin_nonzero, device=try_gpu())
             Fmask_batch[:, zero_hkl_bool] = torch.tensor(
-                0., device=try_gpu(), dtype=torch.complex64)  # type: ignore
+                0.0, device=try_gpu(), dtype=torch.complex64
+            )  # type: ignore
             self.Fmask_asu_batch = Fmask_batch
             if Return:
                 return self.Fmask_asu_batch
-            
+
     def _calc_ftotal_batch_bini(self, bin_i, index_i, HKL_array, Fprotein, Fmask):
-        """calculate ftotal for bin i
+        """
+        calculate ftotal for bin i
         """
         scaled_fmask_i = Fmask[:, index_i] * self.kmasks[bin_i]
-        fmodel_i = self.kisos[bin_i] * DWF_aniso(self.uanisos[bin_i].unsqueeze(0), self.reciprocal_cell_paras, HKL_array[index_i])[
-            0] * (Fprotein[:, index_i] + scaled_fmask_i)
+        fmodel_i = (
+            self.kisos[bin_i]
+            * DWF_aniso(
+                self.uanisos[bin_i].unsqueeze(0),
+                self.reciprocal_cell_paras,
+                HKL_array[index_i],
+            )[0]
+            * (Fprotein[:, index_i] + scaled_fmask_i)
+        )
         return fmodel_i
 
-    def calc_ftotal_batch(self, Return=True):
+    def calc_ftotal_batch(self, bins=None, Return=True):
+        """
+        Calculate Ftotal = kiso * exp(-2*pi^2*s^T*Uaniso*s) * (Fprotein + kmask * Fmask)
+
+        Parameters
+        ----------
+        bins: None or List[int], default None
+            Specify which resolution bins to calculate the ftotal, if None, calculate for all
+
+        Return: Boolean, default True
+            Whether to return the results
+
+        Returns
+        -------
+        torch.tensor, complex
+
+        """
+        if bins is None:
+            bins = range(self.n_bins)
         if not self.HKL_array is None:
             ftotal_hkl_batch = torch.zeros_like(self.Fprotein_HKL_batch)
-            for bin_i in range(self.n_bins):
-                index_i = (self.bins == bin_i)
+            for bin_i in bins:
+                index_i = self.bins == bin_i
                 ftotal_hkl_batch[:, index_i] = self._calc_ftotal_batch_bini(
-                    bin_i, index_i, self.HKL_array, self.Fprotein_HKL_batch, self.Fmask_HKL_batch)
+                    bin_i,
+                    index_i,
+                    self.HKL_array,
+                    self.Fprotein_HKL_batch,
+                    self.Fmask_HKL_batch,
+                )
             self.Ftotal_HKL_batch = ftotal_hkl_batch
             if Return:
                 return ftotal_hkl_batch
         else:
             ftotal_asu_batch = torch.zeros_like(self.Fprotein_asu_batch)
-            for bin_i in range(self.n_bins):
-                index_i = (self.bins == bin_i)
+            for bin_i in bins:
+                index_i = self.bins == bin_i
                 ftotal_asu_batch[index_i] = self._calc_ftotal_batch_bini(
-                    bin_i, index_i, self.Hasu_array, self.Fprotein_asu, self.Fmask_asu)
+                    bin_i, index_i, self.Hasu_array, self.Fprotein_asu, self.Fmask_asu
+                )
             self.Ftotal_asu_batch = ftotal_asu_batch
             if Return:
                 return ftotal_asu_batch
@@ -818,12 +1008,14 @@ class SFcalculator(object):
         F_out = getattr(self, F_attr)
         HKL_out = getattr(self, HKL_attr)
         assert len(F_out) == len(
-            HKL_out), "HKL and structural factor should have same length!"
+            HKL_out
+        ), "HKL and structural factor should have same length!"
         F_out_mag = torch.abs(F_out)
         PI_on_180 = 0.017453292519943295
         F_out_phase = torch.angle(F_out) / PI_on_180
-        dataset = rs.DataSet(spacegroup=self.space_group,
-                             cell=self.unit_cell)  # type: ignore
+        dataset = rs.DataSet(
+            spacegroup=self.space_group, cell=self.unit_cell
+        )  # type: ignore
         dataset["H"] = HKL_out[:, 0]
         dataset["K"] = HKL_out[:, 1]
         dataset["L"] = HKL_out[:, 2]
@@ -834,19 +1026,24 @@ class SFcalculator(object):
         return dataset
 
 
-def F_protein(HKL_array, dr2_array, fullsf_tensor, reciprocal_cell_paras,
-              R_G_tensor_stack,
-              T_G_tensor_stack,
-              atom_pos_frac,
-              atom_b_iso,
-              atom_b_aniso,
-              atom_occ,
-              NO_Bfactor=False):
-    '''
+def F_protein(
+    HKL_array,
+    dr2_array,
+    fullsf_tensor,
+    reciprocal_cell_paras,
+    R_G_tensor_stack,
+    T_G_tensor_stack,
+    atom_pos_frac,
+    atom_b_iso,
+    atom_b_aniso,
+    atom_occ,
+    NO_Bfactor=False,
+):
+    """
     Calculate Protein Structural Factor from an atomic model
 
     atom_pos_frac: 2D tensor, [N_atom, N_dim=3]
-    '''
+    """
     # F_calc = sum_Gsum_j{ [f0_sj*DWF*exp(2*pi*i*(h,k,l)*(R_G*(x1,x2,x3)+T_G))]} fractional postion, Rupp's Book P279
     # G is symmetry operations of the spacegroup and j is the atoms
     # DWF is the Debye-Waller Factor, has isotropic and anisotropic version, based on the PDB file input, Rupp's Book P641
@@ -859,44 +1056,52 @@ def F_protein(HKL_array, dr2_array, fullsf_tensor, reciprocal_cell_paras,
         dwf_iso = DWF_iso(atom_b_iso, dr2_array)
         dwf_aniso = DWF_aniso(atom_b_aniso, reciprocal_cell_paras, HKL_array)
         # Some atoms do not have Anisotropic U
-        mask_vec = torch.all(atom_b_aniso == torch.tensor(
-            [0.]*6, device=try_gpu()), dim=-1)
+        mask_vec = torch.all(
+            atom_b_aniso == torch.tensor([0.0] * 6, device=try_gpu()), dim=-1
+        )
         dwf_all = dwf_aniso
         dwf_all[mask_vec] = dwf_iso[mask_vec]
 
         # Apply Atomic Structure Factor and Occupancy for magnitude
-        magnitude = dwf_all * fullsf_tensor * \
-            atom_occ[..., None]  # [N_atoms, N_HKLs]
+        magnitude = dwf_all * fullsf_tensor * atom_occ[..., None]  # [N_atoms, N_HKLs]
 
     # Vectorized phase calculation
-    sym_oped_pos_frac = torch.permute(torch.tensordot(R_G_tensor_stack,
-                                                      atom_pos_frac.T, 1), [2, 0, 1]) + T_G_tensor_stack  # Shape [N_atom, N_op, N_dim=3]
-    exp_phase = 0.
+    sym_oped_pos_frac = (
+        torch.permute(torch.tensordot(R_G_tensor_stack, atom_pos_frac.T, 1), [2, 0, 1])
+        + T_G_tensor_stack
+    )  # Shape [N_atom, N_op, N_dim=3]
+    exp_phase = 0.0
     # Loop through symmetry operations instead of fully vectorization, to reduce the memory cost
     for i in range(sym_oped_pos_frac.size(dim=1)):
-        phase_G = 2*np.pi * \
-            torch.tensordot(HKL_tensor, sym_oped_pos_frac[:, i, :].T, 1)
-        exp_phase = exp_phase + torch.exp(1j*phase_G)
-    F_calc = torch.sum(exp_phase*magnitude.T, dim=-1)
+        phase_G = (
+            2 * np.pi * torch.tensordot(HKL_tensor, sym_oped_pos_frac[:, i, :].T, 1)
+        )
+        exp_phase = exp_phase + torch.exp(1j * phase_G)
+    F_calc = torch.sum(exp_phase * magnitude.T, dim=-1)
     return F_calc
 
 
-def F_protein_batch(HKL_array, dr2_array, fullsf_tensor, reciprocal_cell_paras,
-                    R_G_tensor_stack,
-                    T_G_tensor_stack,
-                    atom_pos_frac_batch,
-                    atom_b_iso,
-                    atom_b_aniso,
-                    atom_occ,
-                    NO_Bfactor=False,
-                    PARTITION=20):
-    '''
+def F_protein_batch(
+    HKL_array,
+    dr2_array,
+    fullsf_tensor,
+    reciprocal_cell_paras,
+    R_G_tensor_stack,
+    T_G_tensor_stack,
+    atom_pos_frac_batch,
+    atom_b_iso,
+    atom_b_aniso,
+    atom_occ,
+    NO_Bfactor=False,
+    PARTITION=20,
+):
+    """
     Calculate Protein Structural Factor from a batch of atomic models
 
     atom_pos_frac_batch: 3D tensor, [N_batch, N_atoms, N_dim=3]
 
     TODO: Support batched B factors
-    '''
+    """
     # F_calc = sum_Gsum_j{ [f0_sj*DWF*exp(2*pi*i*(h,k,l)*(R_G*(x1,x2,x3)+T_G))]} fractional postion, Rupp's Book P279
     # G is symmetry operations of the spacegroup and j is the atoms
     # DWF is the Debye-Waller Factor, has isotropic and anisotropic version, based on the PDB file input, Rupp's Book P641
@@ -910,34 +1115,42 @@ def F_protein_batch(HKL_array, dr2_array, fullsf_tensor, reciprocal_cell_paras,
         dwf_iso = DWF_iso(atom_b_iso, dr2_array)
         dwf_aniso = DWF_aniso(atom_b_aniso, reciprocal_cell_paras, HKL_array)
         # Some atoms do not have Anisotropic U
-        mask_vec = torch.all(atom_b_aniso == torch.tensor(
-            [0.]*6, device=try_gpu()), dim=-1)
+        mask_vec = torch.all(
+            atom_b_aniso == torch.tensor([0.0] * 6, device=try_gpu()), dim=-1
+        )
         dwf_all = dwf_aniso
         dwf_all[mask_vec] = dwf_iso[mask_vec]
         # Apply Atomic Structure Factor and Occupancy for magnitude
-        magnitude = dwf_all * fullsf_tensor * \
-            atom_occ[..., None]  # [N_atoms, N_HKLs]
+        magnitude = dwf_all * fullsf_tensor * atom_occ[..., None]  # [N_atoms, N_HKLs]
 
     # Vectorized phase calculation
-    sym_oped_pos_frac = torch.tensordot(atom_pos_frac_batch, torch.permute(R_G_tensor_stack, [
-        2, 1, 0]), 1) + T_G_tensor_stack.T  # Shape [N_batch, N_atom, N_dim=3, N_ops]
+    sym_oped_pos_frac = (
+        torch.tensordot(
+            atom_pos_frac_batch, torch.permute(R_G_tensor_stack, [2, 1, 0]), 1
+        )
+        + T_G_tensor_stack.T
+    )  # Shape [N_batch, N_atom, N_dim=3, N_ops]
     N_ops = R_G_tensor_stack.shape[0]
     N_partition = batchsize // PARTITION + 1
-    F_calc = 0.
+    F_calc = 0.0
     for j in range(N_partition):
-        Fcalc_j = 0.
-        if j*PARTITION >= batchsize:
+        Fcalc_j = 0.0
+        if j * PARTITION >= batchsize:
             continue
-        start = j*PARTITION
-        end = min((j+1)*PARTITION, batchsize)
+        start = j * PARTITION
+        end = min((j + 1) * PARTITION, batchsize)
         for i in range(N_ops):  # Loop through symmetry operations to reduce memory cost
             # Shape [PARTITION, N_atoms, N_HKLs]
-            phase_ij = 2 * torch.pi * \
-                torch.tensordot(
-                    sym_oped_pos_frac[start:end, :, :, i], HKL_tensor.T, 1)
-            exp_phase_ij = torch.exp(1j*phase_ij)
+            phase_ij = (
+                2
+                * torch.pi
+                * torch.tensordot(
+                    sym_oped_pos_frac[start:end, :, :, i], HKL_tensor.T, 1
+                )
+            )
+            exp_phase_ij = torch.exp(1j * phase_ij)
             # Shape [PARTITION, N_HKLs], sum over atoms
-            Fcalc_ij = torch.sum(exp_phase_ij*magnitude, dim=1)
+            Fcalc_ij = torch.sum(exp_phase_ij * magnitude, dim=1)
             # Shape [PARTITION, N_HKLs], sum over symmetry operations
             Fcalc_j = Fcalc_j + Fcalc_ij
         if j == 0:

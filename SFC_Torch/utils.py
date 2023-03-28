@@ -14,8 +14,9 @@ __all__ = [
     "bin_by_logarithmic",
 ]
 
+
 def r_factor(Fo, Fmodel, free_flag):
-    '''
+    """
     A function to calculate R_work and R_free
 
     Parameters
@@ -30,13 +31,18 @@ def r_factor(Fo, Fmodel, free_flag):
     Returns
     -------
     R_work, R_free: Both are floats
-    '''
-    R_work = torch.sum(torch.abs(Fo[~free_flag] - Fmodel[~free_flag])) / torch.sum(Fo[~free_flag])
-    R_free = torch.sum(torch.abs(Fo[free_flag] - Fmodel[free_flag])) / torch.sum(Fo[free_flag])
+    """
+    R_work = torch.sum(torch.abs(Fo[~free_flag] - Fmodel[~free_flag])) / torch.sum(
+        Fo[~free_flag]
+    )
+    R_free = torch.sum(torch.abs(Fo[free_flag] - Fmodel[free_flag])) / torch.sum(
+        Fo[free_flag]
+    )
     return R_work, R_free
 
+
 def diff_array(a, b):
-    '''
+    """
     Return the elements in a but not in b, when a and b are array-like object
 
     Parameters
@@ -52,27 +58,29 @@ def diff_array(a, b):
     Return
     ------
     Difference Elements
-    '''
+    """
     tuplelist_a = list(map(tuple, a))
     tuplelist_b = list(map(tuple, b))
     set_a = set(tuplelist_a)
     set_b = set(tuplelist_b)
     return set_a - set_b
 
+
 def asu2HKL(Hasu_array, HKL_array):
-    '''
+    """
     A fast way to find indices convert array Hasu to array HKL
-    when both Hasu and HKL are 2D arrays. 
+    when both Hasu and HKL are 2D arrays.
     HKL is the subset of Hasu.
     Involves two steps:
     1. an evil string coding along axis1, turn the 2D array into 1D
     2. fancy sortsearch on two 1D arrays
-    '''
+    """
+
     def tostr(array):
         string = ""
         for i in array:
-            string += "_"+str(i)
-        return np.asarray(string, dtype='<U20')
+            string += "_" + str(i)
+        return np.asarray(string, dtype="<U20")
 
     HKL_array_str = np.apply_along_axis(tostr, axis=1, arr=HKL_array)
     Hasu_array_str = np.apply_along_axis(tostr, axis=1, arr=Hasu_array)
@@ -81,8 +89,9 @@ def asu2HKL(Hasu_array, HKL_array):
     indices = xsorted[ypos]
     return indices
 
+
 def DWF_iso(b_iso, dr2_array):
-    '''
+    """
     Calculate Debye_Waller Factor with Isotropic B Factor
     DWF_iso = exp(-B_iso * dr^2/4), Rupp P640, dr is dhkl in reciprocal space
 
@@ -97,13 +106,13 @@ def DWF_iso(b_iso, dr2_array):
     Return:
     -------
     A 2D [N_atoms, N_HKLs] float32 tensor with DWF corresponding to different atoms and different HKLs
-    '''
+    """
     dr2_tensor = torch.tensor(dr2_array, device=try_gpu())
-    return torch.exp(-b_iso.view([-1, 1])*dr2_tensor/4.).type(torch.float32)
+    return torch.exp(-b_iso.view([-1, 1]) * dr2_tensor / 4.0).type(torch.float32)
 
 
 def DWF_aniso(b_aniso, reciprocal_cell_paras, HKL_array):
-    '''
+    """
     Calculate Debye_Waller Factor with anisotropic B Factor, Rupp P641
     DWF_aniso = exp[-2 * pi^2 * (U11*h^2*ar^2 + U22*k^2*br^2 + U33*l^2cr^2
                                  + 2U12*h*k*ar*br*cos(gamma_r)
@@ -123,35 +132,44 @@ def DWF_aniso(b_aniso, reciprocal_cell_paras, HKL_array):
     Return:
     -------
     A 2D [N_atoms, N_HKLs] float32 tensor with DWF corresponding to different atoms and different HKLs
-    '''
+    """
     # U11, U22, U33, U12, U13, U23 = b_aniso
     HKL_tensor = torch.tensor(HKL_array, device=try_gpu())
     h, k, l = HKL_tensor.T
     ar, br, cr, cos_alphar, cos_betar, cos_gammar = reciprocal_cell_paras
-    log_value = -2 * np.pi**2 * (b_aniso[:, 0][:, None] * h**2 * ar**2
-                                 + b_aniso[:, 1][:, None] * k**2 * br**2
-                                 + b_aniso[:, 2][:, None] * l**2 * cr**2
-                                 + 2*b_aniso[:, 3][:, None] *
-                                 h*k*ar*br*cos_gammar
-                                 + 2*b_aniso[:, 4][:, None]*h*l*ar*cr*cos_betar
-                                 + 2*b_aniso[:, 5][:, None]*k*l*br*cr*cos_alphar)
+    log_value = (
+        -2
+        * np.pi**2
+        * (
+            b_aniso[:, 0][:, None] * h**2 * ar**2
+            + b_aniso[:, 1][:, None] * k**2 * br**2
+            + b_aniso[:, 2][:, None] * l**2 * cr**2
+            + 2 * b_aniso[:, 3][:, None] * h * k * ar * br * cos_gammar
+            + 2 * b_aniso[:, 4][:, None] * h * l * ar * cr * cos_betar
+            + 2 * b_aniso[:, 5][:, None] * k * l * br * cr * cos_alphar
+        )
+    )
     DWF_aniso_vec = torch.exp(log_value)
     return DWF_aniso_vec.type(torch.float32)
 
+
 def vdw_rad_tensor(atom_name_list):
-    '''
+    """
     Return the vdw radius tensor of the atom list
-    '''
+    """
     unique_atom = list(set(atom_name_list))
     vdw_rad_dict = {}
     for atom_type in unique_atom:
         element = gemmi.Element(atom_type)
         vdw_rad_dict[atom_type] = torch.tensor(element.vdw_r)
-    vdw_rad_tensor = torch.tensor([vdw_rad_dict[atom] for atom in atom_name_list], device=try_gpu()).type(torch.float32)
+    vdw_rad_tensor = torch.tensor(
+        [vdw_rad_dict[atom] for atom in atom_name_list], device=try_gpu()
+    ).type(torch.float32)
     return vdw_rad_tensor
 
+
 def vdw_distance_matrix(atom_name_list):
-    '''
+    """
     Calculate the minimum distance between atoms by vdw radius
     Use as a criteria of atom clash
 
@@ -162,22 +180,24 @@ def vdw_distance_matrix(atom_name_list):
 
     Returns
     -------
-    A matrix with [N_atom, N_atom], value [i,j] means the minimum allowed 
+    A matrix with [N_atom, N_atom], value [i,j] means the minimum allowed
     distance between atom i and atom j
-    '''
+    """
     vdw_rad = vdw_rad_tensor(atom_name_list)
     vdw_min_dist = vdw_rad[None, :] + vdw_rad[:, None]
     return vdw_min_dist
 
+
 def nonH_index(atom_name_list):
-    '''
+    """
     Return the index of non-Hydrogen atoms
-    '''
-    index = np.argwhere(np.array(atom_name_list) != 'H').reshape(-1)
+    """
+    index = np.argwhere(np.array(atom_name_list) != "H").reshape(-1)
     return index
 
+
 def unitcell_grid_center(unitcell, spacing=4.5, frac=False, return_tensor=True):
-    '''
+    """
     Create a grid in real space given a unitcell and spacing
     output the center positions of all grids
 
@@ -198,39 +218,44 @@ def unitcell_grid_center(unitcell, spacing=4.5, frac=False, return_tensor=True):
     Returns
     -------
     [N_grid, 3] array, containing center positions of all grids
-    '''
+    """
     a, b, c, _, _, _ = unitcell.parameters
-    na = int(a/spacing)
-    nb = int(b/spacing)
-    nc = int(c/spacing)
+    na = int(a / spacing)
+    nb = int(b / spacing)
+    nc = int(c / spacing)
     u_list = np.linspace(0, 1, na)
     v_list = np.linspace(0, 1, nb)
     w_list = np.linspace(0, 1, nc)
-    unitcell_grid_center_frac = np.array(
-        np.meshgrid(u_list, v_list, w_list)).T.reshape(-1, 3)
+    unitcell_grid_center_frac = np.array(np.meshgrid(u_list, v_list, w_list)).T.reshape(
+        -1, 3
+    )
     if frac:
         result = unitcell_grid_center_frac
     else:
-        result = np.dot(unitcell_grid_center_frac, np.array(
-            unitcell.orthogonalization_matrix).T)
+        result = np.dot(
+            unitcell_grid_center_frac, np.array(unitcell.orthogonalization_matrix).T
+        )
 
     if return_tensor:
         return torch.tensor(result, device=try_gpu()).type(torch.float32)
     else:
         return result
 
-def try_gpu(i=0):  
-    if torch.cuda.device_count() >= i + 1:
-        return torch.device(f'cuda:{i}')
-    return torch.device('cpu')
 
-def try_all_gpus(): 
-    devices = [torch.device(f'cuda:{i}')
-             for i in range(torch.cuda.device_count())]
-    return devices if devices else [torch.device('cpu')]
+def try_gpu(i=0):
+    if torch.cuda.device_count() >= i + 1:
+        return torch.device(f"cuda:{i}")
+    return torch.device("cpu")
+
+
+def try_all_gpus():
+    devices = [torch.device(f"cuda:{i}") for i in range(torch.cuda.device_count())]
+    return devices if devices else [torch.device("cpu")]
+
 
 def is_list_or_tuple(x):
     return isinstance(x, list) or isinstance(x, tuple)
+
 
 def assert_numpy(x, arr_type=None):
     if isinstance(x, torch.Tensor):
@@ -243,6 +268,7 @@ def assert_numpy(x, arr_type=None):
     if arr_type is not None:
         x = x.astype(arr_type)
     return x
+
 
 def bin_by_logarithmic(data, bins=10, Nmin=100):
     """Bin data with the logarithmic algorithm
@@ -265,13 +291,13 @@ def bin_by_logarithmic(data, bins=10, Nmin=100):
         Values of bin boundaries (1D array with `bins + 1` entries)
     """
     from reciprocalspaceship.utils import assign_with_binedges
-   
+
     data_sorted = np.sort(data)[::-1]
     dlow = data_sorted[0] + 0.001
     dhigh = data_sorted[-1] - 0.001
     d1 = data_sorted[Nmin]
-    d2 = data_sorted[2*Nmin+10]
-    lnd_list = np.linspace(np.log(d2), np.log(dhigh), bins-1)
+    d2 = data_sorted[2 * Nmin + 10]
+    lnd_list = np.linspace(np.log(d2), np.log(dhigh), bins - 1)
     bin_edges = np.concatenate([[dlow, d1], np.exp(lnd_list)])
     assignment = assign_with_binedges(data, bin_edges, right_inclusive=True)
     return assignment, bin_edges
