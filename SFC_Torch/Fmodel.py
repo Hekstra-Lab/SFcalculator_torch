@@ -188,23 +188,21 @@ class SFcalculator(object):
         self.atom_b_iso = []
         self.atom_occ = []
         model = structure[0]  # gemmi.Model object
-        for chain in model:
-            for res in chain:
-                for atom in res:
-                    # A list of atom name like ['O','C','N','C', ...], [Nc]
-                    self.atom_name.append(atom.element.name)
-                    # A list of atom's Positions in orthogonal space, [Nc,3]
-                    self.atom_pos_orth.append(atom.pos.tolist())
-                    # A list of atom's Positions in fractional space, [Nc,3]
-                    self.atom_pos_frac.append(
-                        self.unit_cell.fractionalize(atom.pos).tolist()
-                    )
-                    # A list of anisotropic B Factor [[U11,U22,U33,U12,U13,U23],..], [Nc,6]
-                    self.atom_b_aniso.append(atom.aniso.elements_pdb())
-                    # A list of isotropic B Factor [B1,B2,...], [Nc]
-                    self.atom_b_iso.append(atom.b_iso)
-                    # A list of occupancy [P1,P2,....], [Nc]
-                    self.atom_occ.append(atom.occ)
+        for cra in model.all():
+            # A list of atom name like ['O','C','N','C', ...], [Nc]
+            self.atom_name.append(cra.atom.element.name)
+            # A list of atom's Positions in orthogonal space, [Nc,3]
+            self.atom_pos_orth.append(cra.atom.pos.tolist())
+            # A list of atom's Positions in fractional space, [Nc,3]
+            self.atom_pos_frac.append(
+                self.unit_cell.fractionalize(cra.atom.pos).tolist()
+            )
+            # A list of anisotropic B Factor [[U11,U22,U33,U12,U13,U23],..], [Nc,6]
+            self.atom_b_aniso.append(cra.atom.aniso.elements_pdb())
+            # A list of isotropic B Factor [B1,B2,...], [Nc]
+            self.atom_b_iso.append(cra.atom.b_iso)
+            # A list of occupancy [P1,P2,....], [Nc]
+            self.atom_occ.append(cra.atom.occ)
 
         self.atom_pos_orth = torch.tensor(self.atom_pos_orth, device=try_gpu()).type(
             torch.float32
@@ -323,12 +321,12 @@ class SFcalculator(object):
         assignments, edges = bin_by_logarithmic(d, bins, Nmin)
         self.n_bins = bins
         self.bins = assignments
+        self.bin_labels = [
+            f"{e1:{format_str}} - {e2:{format_str}}"
+            for e1, e2 in zip(edges[:-1], edges[1:])
+        ]
         if return_labels:
-            labels = [
-                f"{e1:{format_str}} - {e2:{format_str}}"
-                for e1, e2 in zip(edges[:-1], edges[1:])
-            ]
-            return labels
+            return self.bin_labels
 
     def inspect_data(self, verbose=True):
         """
@@ -648,13 +646,16 @@ class SFcalculator(object):
         """Only used for case you don't have data"""
         self.kmasks = [
             torch.tensor(kmask).to(self.atom_pos_frac).requires_grad_(requires_grad)
-        ] * self.n_bins
+            for i in range(self.n_bins)
+        ]
         self.kisos = [
             torch.tensor(kiso).to(self.atom_pos_frac).requires_grad_(requires_grad)
-        ] * self.n_bins
+            for i in range(self.n_bins)
+        ]
         self.uanisos = [
             torch.tensor(uaniso).to(self.atom_pos_frac).requires_grad_(requires_grad)
-        ] * self.n_bins
+            for i in range(self.n_bins)
+        ]
 
     def init_scales(self, requires_grad=True):
         if hasattr(self, "Fo"):
@@ -816,6 +817,26 @@ class SFcalculator(object):
             self.Ftotal_asu = ftotal_asu
             if Return:
                 return ftotal_asu
+
+    def summarize(self):
+        """
+        Print model quality log like phenix.model_vs_data
+        """
+        ftotal = self.calc_ftotal(Return=True)
+        _, counts = np.unique(self.bins, return_counts=True)
+        print(
+            f"{'Resolution':15},{'N_work':>7},{'N_free':>7},{'R_work':>7},{'R_free':>7},{'k_mask':>7},{'k_iso':>7}"
+        )
+        for i in range(self.n_bins):
+            index_i = self.bins == i
+            r_worki, r_freei = r_factor(
+                self.Fo[index_i], torch.abs(ftotal[index_i]), self.free_flag[index_i]
+            )
+            N_work = counts[i] - np.sum(self.free_flag[index_i])
+            N_free = np.sum(self.free_flag[index_i])
+            print(
+                f"{self.bin_labels[i]:<15},{N_work:7d},{N_free:7d},{assert_numpy(r_worki):7.3f},{assert_numpy(r_freei):7.3f},{assert_numpy(self.kmasks[i]):7.3f},{assert_numpy(self.kisos[i]):7.3f}"
+            )
 
     def calc_fprotein_batch(
         self, atoms_position_batch, NO_Bfactor=False, Return=False, PARTITION=20
@@ -1066,10 +1087,12 @@ def F_protein(
         magnitude = dwf_all * fullsf_tensor * atom_occ[..., None]  # [N_atoms, N_HKLs]
 
     # Vectorized phase calculation
-    sym_oped_pos_frac = (
-        torch.permute(torch.tensordot(R_G_tensor_stack, atom_pos_frac.T, 1), [2, 0, 1])
-        + T_G_tensor_stack
-    )  # Shape [N_atom, N_op, N_dim=3]
+    # sym_oped_pos_frac = (
+    #     torch.permute(torch.tensordot(R_G_tensor_stack, atom_pos_frac.T, 1), [2, 0, 1])
+    #     + T_G_tensor_stack
+    # )  
+    # Shape [N_atom, N_op, N_dim=3]
+    sym_oped_pos_frac = torch.einsum("oxy,ay->aox", R_G_tensor_stack, atom_pos_frac) + T_G_tensor_stack
     exp_phase = 0.0
     # Loop through symmetry operations instead of fully vectorization, to reduce the memory cost
     for i in range(sym_oped_pos_frac.size(dim=1)):
@@ -1124,12 +1147,14 @@ def F_protein_batch(
         magnitude = dwf_all * fullsf_tensor * atom_occ[..., None]  # [N_atoms, N_HKLs]
 
     # Vectorized phase calculation
-    sym_oped_pos_frac = (
-        torch.tensordot(
-            atom_pos_frac_batch, torch.permute(R_G_tensor_stack, [2, 1, 0]), 1
-        )
-        + T_G_tensor_stack.T
-    )  # Shape [N_batch, N_atom, N_dim=3, N_ops]
+    # sym_oped_pos_frac = (
+    #     torch.tensordot(
+    #         atom_pos_frac_batch, torch.permute(R_G_tensor_stack, [2, 1, 0]), 1
+    #     )
+    #     + T_G_tensor_stack.T
+    # )  
+    # Shape [N_batch, N_atom, N_dim=3, N_ops]
+    sym_oped_pos_frac = torch.einsum("bay,oxy->baxo", atom_pos_frac_batch, R_G_tensor_stack) + T_G_tensor_stack.T
     N_ops = R_G_tensor_stack.shape[0]
     N_partition = batchsize // PARTITION + 1
     F_calc = 0.0
