@@ -20,7 +20,7 @@ import reciprocalspaceship as rs
 
 from .symmetry import generate_reciprocal_asu, expand_to_p1
 from .mask import reciprocal_grid, rsgrid2realmask, realmask2Fmask
-from .utils import try_gpu, DWF_aniso, DWF_iso, diff_array, asu2HKL
+from .utils import try_gpu, DWF_aniso, DWF_iso, diff_array, asu2HKL, aniso_scaling
 from .utils import vdw_rad_tensor, unitcell_grid_center, bin_by_logarithmic
 from .packingscore import packingscore_voxelgrid_torch
 from .utils import r_factor, assert_numpy
@@ -109,20 +109,6 @@ class SFcalculator(object):
             device=try_gpu(),
         ).type(torch.float32)
 
-        self.reciprocal_cell = self.unit_cell.reciprocal()  # gemmi.UnitCell object
-        # [ar, br, cr, cos(alpha_r), cos(beta_r), cos(gamma_r)]
-        self.reciprocal_cell_paras = torch.tensor(
-            [
-                self.reciprocal_cell.a,
-                self.reciprocal_cell.b,
-                self.reciprocal_cell.c,
-                np.cos(np.deg2rad(self.reciprocal_cell.alpha)),
-                np.cos(np.deg2rad(self.reciprocal_cell.beta)),
-                np.cos(np.deg2rad(self.reciprocal_cell.gamma)),
-            ],
-            device=try_gpu(),
-        ).type(torch.float32)
-
         # Generate ASU HKL array and Corresponding d*^2 array
         if mtzfile_dir:
             mtz_reference = rs.read_mtz(mtzfile_dir)
@@ -181,10 +167,17 @@ class SFcalculator(object):
                 self.dr2asu_array = self.unit_cell.calculate_1_d2_array(self.Hasu_array)
                 self.HKL_array = None
 
+        self.orth2frac_tensor = torch.tensor(
+            self.unit_cell.fractionalization_matrix.tolist(), device=try_gpu()
+        ).type(torch.float32)
+        self.frac2orth_tensor = torch.tensor(
+            self.unit_cell.orthogonalization_matrix.tolist(), device=try_gpu()
+        ).type(torch.float32)
+
         self.atom_name = []
         self.atom_pos_orth = []
         self.atom_pos_frac = []
-        self.atom_b_aniso = []
+        self.atom_aniso_uw = []
         self.atom_b_iso = []
         self.atom_occ = []
         model = structure[0]  # gemmi.Model object
@@ -197,8 +190,8 @@ class SFcalculator(object):
             self.atom_pos_frac.append(
                 self.unit_cell.fractionalize(cra.atom.pos).tolist()
             )
-            # A list of anisotropic B Factor [[U11,U22,U33,U12,U13,U23],..], [Nc,6]
-            self.atom_b_aniso.append(cra.atom.aniso.elements_pdb())
+            # A list of anisotropic B Factor in matrix form [[U11,U22,U33,U12,U13,U23],..], [Nc,3,3]
+            self.atom_aniso_uw.append(cra.atom.aniso.as_mat33().tolist())
             # A list of isotropic B Factor [B1,B2,...], [Nc]
             self.atom_b_iso.append(cra.atom.b_iso)
             # A list of occupancy [P1,P2,....], [Nc]
@@ -210,9 +203,10 @@ class SFcalculator(object):
         self.atom_pos_frac = torch.tensor(self.atom_pos_frac, device=try_gpu()).type(
             torch.float32
         )
-        self.atom_b_aniso = torch.tensor(self.atom_b_aniso, device=try_gpu()).type(
+        self.atom_aniso_uw = torch.tensor(self.atom_aniso_uw, device=try_gpu()).type(
             torch.float32
         )
+
         self.atom_b_iso = torch.tensor(self.atom_b_iso, device=try_gpu()).type(
             torch.float32
         )
@@ -221,13 +215,6 @@ class SFcalculator(object):
         )
         self.n_atoms = len(self.atom_name)
         self.unique_atom = list(set(self.atom_name))
-
-        self.orth2frac_tensor = torch.tensor(
-            self.unit_cell.fractionalization_matrix.tolist(), device=try_gpu()
-        ).type(torch.float32)
-        self.frac2orth_tensor = torch.tensor(
-            self.unit_cell.orthogonalization_matrix.tolist(), device=try_gpu()
-        ).type(torch.float32)
 
         # A dictionary of atomic structural factor f0_sj of different atom types at different HKL Rupp's Book P280
         # f0_sj = [sum_{i=1}^4 {a_ij*exp(-b_ij* d*^2/4)} ] + c_j
@@ -365,7 +352,7 @@ class SFcalculator(object):
         self,
         atoms_position_tensor=None,
         atoms_biso_tensor=None,
-        atoms_baniso_tensor=None,
+        atoms_aniso_uw_tensor=None,
         atoms_occ_tensor=None,
         NO_Bfactor=False,
         Return=False,
@@ -381,8 +368,8 @@ class SFcalculator(object):
         atoms_biso_tensor: 1D [N_atoms,] tensor or default None
             Isotropic B factors of each atoms in the model; If not given, the info stored in attribute `atoms_b_iso` will be used
 
-        atoms_baniso_tensor: 2D [N_atoms, 6] tensor or default None
-            Anisotropic B factors of each atoms in the model; If not given, the info stored in attribute `atoms_b_aniso` will be used
+        atoms_aniso_uw_tensor: 3D [N_atoms, 3, 3] tensor or default None
+            Anisotropic B factors of each atoms in the model, in matrix form; If not given, the info stored in attribute `atoms_aniso_uw` will be used
 
         atoms_occ_tensor: 1D [N_atoms,] tensor or default None
             Occupancy of each atoms in the model; If not given, the info stored in attribute `atom_occ` will be used
@@ -406,11 +393,11 @@ class SFcalculator(object):
                 atoms_position_tensor, self.orth2frac_tensor.T, 1
             )
 
-        if not atoms_baniso_tensor is None:
-            assert len(atoms_baniso_tensor) == len(
+        if not atoms_aniso_uw_tensor is None:
+            assert len(atoms_aniso_uw_tensor) == len(
                 self.atom_name
             ), "Atoms in atoms_baniso_tensor should be consistent with atom names in PDB model!"
-            self.atom_b_aniso = atoms_baniso_tensor
+            self.atom_aniso_uw = atoms_aniso_uw_tensor
 
         if not atoms_biso_tensor is None:
             assert len(atoms_biso_tensor) == len(
@@ -428,12 +415,12 @@ class SFcalculator(object):
             self.Hasu_array,
             self.dr2asu_array,
             self.fullsf_tensor,
-            self.reciprocal_cell_paras,
             self.R_G_tensor_stack,
             self.T_G_tensor_stack,
+            self.orth2frac_tensor,
             self.atom_pos_frac,
             self.atom_b_iso,
-            self.atom_b_aniso,
+            self.atom_aniso_uw,
             self.atom_occ,
             NO_Bfactor=NO_Bfactor,
         )
@@ -710,7 +697,7 @@ class SFcalculator(object):
             return loss_track
 
     def _get_scales_lbfgs_r(
-        self, n_steps=5, lr=0.1, verbose=True, initialize=True, return_loss=False
+        self, n_steps=5, lr=0.1, verbose=True, initialize=False, return_loss=False
     ):
         """
         Use LBFGS to optimize scales directly with r factor error
@@ -755,7 +742,7 @@ class SFcalculator(object):
             return loss_track
 
     def get_scales_lbfgs(
-        self, ls_steps=3, r_steps=3, ls_lr=0.1, r_lr=0.1, initialize=True, verbose=True
+        self, ls_steps=3, r_steps=3, ls_lr=0.0001, r_lr=0.0001, initialize=True, verbose=True
     ):
         self._get_scales_lbfgs_LS(ls_steps, ls_lr, verbose, initialize)
         self._get_scales_lbfgs_r(r_steps, r_lr, verbose, initialize=False)
@@ -767,11 +754,10 @@ class SFcalculator(object):
         scaled_fmask_i = Fmask[index_i] * self.kmasks[bin_i]
         fmodel_i = (
             self.kisos[bin_i]
-            * DWF_aniso(
-                self.uanisos[bin_i].unsqueeze(0),
-                self.reciprocal_cell_paras,
+            * aniso_scaling(
+                self.uanisos[bin_i],
                 HKL_array[index_i],
-            )[0]
+            )
             * (Fprotein[index_i] + scaled_fmask_i)
         )
         return fmodel_i
@@ -860,12 +846,12 @@ class SFcalculator(object):
             self.Hasu_array,
             self.dr2asu_array,
             self.fullsf_tensor,
-            self.reciprocal_cell_paras,
             self.R_G_tensor_stack,
             self.T_G_tensor_stack,
+            self.orth2frac_tensor,
             atom_pos_frac_batch,
             self.atom_b_iso,
-            self.atom_b_aniso,
+            self.atom_aniso_uw,
             self.atom_occ,
             NO_Bfactor=NO_Bfactor,
             PARTITION=PARTITION,
@@ -972,11 +958,10 @@ class SFcalculator(object):
         scaled_fmask_i = Fmask[:, index_i] * self.kmasks[bin_i]
         fmodel_i = (
             self.kisos[bin_i]
-            * DWF_aniso(
-                self.uanisos[bin_i].unsqueeze(0),
-                self.reciprocal_cell_paras,
+            * aniso_scaling(
+                self.uanisos[bin_i],
                 HKL_array[index_i],
-            )[0]
+            )
             * (Fprotein[:, index_i] + scaled_fmask_i)
         )
         return fmodel_i
@@ -1051,12 +1036,12 @@ def F_protein(
     HKL_array,
     dr2_array,
     fullsf_tensor,
-    reciprocal_cell_paras,
     R_G_tensor_stack,
     T_G_tensor_stack,
+    orth2frac_tensor,
     atom_pos_frac,
     atom_b_iso,
-    atom_b_aniso,
+    atom_aniso_uw,
     atom_occ,
     NO_Bfactor=False,
 ):
@@ -1075,11 +1060,9 @@ def F_protein(
     else:
         # DWF calculator
         dwf_iso = DWF_iso(atom_b_iso, dr2_array)
-        dwf_aniso = DWF_aniso(atom_b_aniso, reciprocal_cell_paras, HKL_array)
+        dwf_aniso = DWF_aniso(atom_aniso_uw, orth2frac_tensor, HKL_array)
         # Some atoms do not have Anisotropic U
-        mask_vec = torch.all(
-            atom_b_aniso == torch.tensor([0.0] * 6, device=try_gpu()), dim=-1
-        )
+        mask_vec = torch.all(torch.all(atom_aniso_uw == 0.0, dim=-1), dim=-1)
         dwf_all = dwf_aniso
         dwf_all[mask_vec] = dwf_iso[mask_vec]
 
@@ -1090,9 +1073,11 @@ def F_protein(
     # sym_oped_pos_frac = (
     #     torch.permute(torch.tensordot(R_G_tensor_stack, atom_pos_frac.T, 1), [2, 0, 1])
     #     + T_G_tensor_stack
-    # )  
+    # )
     # Shape [N_atom, N_op, N_dim=3]
-    sym_oped_pos_frac = torch.einsum("oxy,ay->aox", R_G_tensor_stack, atom_pos_frac) + T_G_tensor_stack
+    sym_oped_pos_frac = (
+        torch.einsum("oxy,ay->aox", R_G_tensor_stack, atom_pos_frac) + T_G_tensor_stack
+    )
     exp_phase = 0.0
     # Loop through symmetry operations instead of fully vectorization, to reduce the memory cost
     for i in range(sym_oped_pos_frac.size(dim=1)):
@@ -1108,12 +1093,12 @@ def F_protein_batch(
     HKL_array,
     dr2_array,
     fullsf_tensor,
-    reciprocal_cell_paras,
     R_G_tensor_stack,
     T_G_tensor_stack,
+    orth2frac_tensor,
     atom_pos_frac_batch,
     atom_b_iso,
-    atom_b_aniso,
+    atom_aniso_uw,
     atom_occ,
     NO_Bfactor=False,
     PARTITION=20,
@@ -1136,11 +1121,9 @@ def F_protein_batch(
     else:
         # DWF calculator
         dwf_iso = DWF_iso(atom_b_iso, dr2_array)
-        dwf_aniso = DWF_aniso(atom_b_aniso, reciprocal_cell_paras, HKL_array)
+        dwf_aniso = DWF_aniso(atom_aniso_uw, orth2frac_tensor, HKL_array)
         # Some atoms do not have Anisotropic U
-        mask_vec = torch.all(
-            atom_b_aniso == torch.tensor([0.0] * 6, device=try_gpu()), dim=-1
-        )
+        mask_vec = torch.all(torch.all(atom_aniso_uw == 0.0, dim=-1), dim=-1)
         dwf_all = dwf_aniso
         dwf_all[mask_vec] = dwf_iso[mask_vec]
         # Apply Atomic Structure Factor and Occupancy for magnitude
@@ -1152,9 +1135,12 @@ def F_protein_batch(
     #         atom_pos_frac_batch, torch.permute(R_G_tensor_stack, [2, 1, 0]), 1
     #     )
     #     + T_G_tensor_stack.T
-    # )  
+    # )
     # Shape [N_batch, N_atom, N_dim=3, N_ops]
-    sym_oped_pos_frac = torch.einsum("bay,oxy->baxo", atom_pos_frac_batch, R_G_tensor_stack) + T_G_tensor_stack.T
+    sym_oped_pos_frac = (
+        torch.einsum("bay,oxy->baxo", atom_pos_frac_batch, R_G_tensor_stack)
+        + T_G_tensor_stack.T
+    )
     N_ops = R_G_tensor_stack.shape[0]
     N_partition = batchsize // PARTITION + 1
     F_calc = 0.0

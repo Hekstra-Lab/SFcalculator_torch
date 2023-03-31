@@ -12,8 +12,8 @@ __all__ = [
     "nonH_index",
     "assert_numpy",
     "bin_by_logarithmic",
+    "aniso_scaling",
 ]
-
 
 def r_factor(Fo, Fmodel, free_flag):
     """
@@ -111,21 +111,17 @@ def DWF_iso(b_iso, dr2_array):
     return torch.exp(-b_iso.view([-1, 1]) * dr2_tensor / 4.0).type(torch.float32)
 
 
-def DWF_aniso(b_aniso, reciprocal_cell_paras, HKL_array):
+def DWF_aniso(aniso_uw, orth2frac_tensor, HKL_array):
     """
     Calculate Debye_Waller Factor with anisotropic B Factor, Rupp P641
-    DWF_aniso = exp[-2 * pi^2 * (U11*h^2*ar^2 + U22*k^2*br^2 + U33*l^2cr^2
-                                 + 2U12*h*k*ar*br*cos(gamma_r)
-                                 + 2U13*h*l*ar*cr*cos(beta_r)
-                                 + 2U23*k*l*br*cr*cos(alpha_r))]
+    DWF_aniso = exp[-2 * pi^2 * (h^T U^* h))]
+    U^* = O^(-1) U_w O(-1).T
 
     Parameters:
     -----------
-    b_aniso: 2D tensor float32, [N_atoms, 6]
-        Anisotropic B factor U, [[U11, U22, U33, U12, U13, U23],...], of diffferent particles
-
-    reciprocal_cell_paras: list of float or tensor float, [6,]
-        Necessary info of Reciprocal unit cell, [ar, br, cr, cos(alpha_r), cos(beta_r), cos(gamma_r)
+    Ustar: 3D tensor float32, [N_atoms, 3, 3]
+        Anisotropic B factor Uw matrix
+        [[[U11, U12, U13], [U12, U22, U23], [U13, U23, U33]]...], of diffferent particles
 
     HKL_array: array of HKL index, [N_HKLs,3]
 
@@ -133,24 +129,42 @@ def DWF_aniso(b_aniso, reciprocal_cell_paras, HKL_array):
     -------
     A 2D [N_atoms, N_HKLs] float32 tensor with DWF corresponding to different atoms and different HKLs
     """
-    # U11, U22, U33, U12, U13, U23 = b_aniso
-    HKL_tensor = torch.tensor(HKL_array, device=try_gpu())
-    h, k, l = HKL_tensor.T
-    ar, br, cr, cos_alphar, cos_betar, cos_gammar = reciprocal_cell_paras
-    log_value = (
-        -2
-        * np.pi**2
-        * (
-            b_aniso[:, 0][:, None] * h**2 * ar**2
-            + b_aniso[:, 1][:, None] * k**2 * br**2
-            + b_aniso[:, 2][:, None] * l**2 * cr**2
-            + 2 * b_aniso[:, 3][:, None] * h * k * ar * br * cos_gammar
-            + 2 * b_aniso[:, 4][:, None] * h * l * ar * cr * cos_betar
-            + 2 * b_aniso[:, 5][:, None] * k * l * br * cr * cos_alphar
-        )
+    HKL_tensor = torch.tensor(HKL_array, device=try_gpu(), dtype=torch.float32)
+    Ustar = torch.einsum("xy, ayz, wz", orth2frac_tensor, aniso_uw, orth2frac_tensor)
+    log_arg = (
+        -2.0 * np.pi**2 * torch.einsum("rx,axy,ry->ar", HKL_tensor, Ustar, HKL_tensor)
     )
-    DWF_aniso_vec = torch.exp(log_value)
+    DWF_aniso_vec = torch.exp(log_arg)
     return DWF_aniso_vec.type(torch.float32)
+
+
+def aniso_scaling(uaniso, HKL_array):
+    """
+    This is used for anisotropic scaling for the overall model
+    kaniso = exp(-2 * pi**2 * h^T * Uaniso * h)
+    Afonine, P. V., et al. Acta Crystallographica Section D (2013): 625-634.
+
+    Parameters
+    ----------
+    uaniso : torch.tensor, [6,]
+        6 unique elements in the anisotropic matrix, [U11,U22,U33,U12,U13,U23]
+    HKL_array : numpy.array, [N_HKLs, 3]
+        array of HKL index
+
+    Return
+    ------
+    torch.tensor [N_HKLs,]
+    """
+    HKL_tensor = torch.tensor(HKL_array, device=try_gpu())
+    U11, U22, U33, U12, U13, U23 = uaniso
+    h, k, l = HKL_tensor.T
+    args = (
+        U11 * h**2
+        + U22 * k**2
+        + U33 * l**2
+        + 2 * (h * k * U12 + h * l * U13 + k * l * U23)
+    )
+    return torch.exp(-2.0 * np.pi**2 * args)
 
 
 def vdw_rad_tensor(atom_name_list):
