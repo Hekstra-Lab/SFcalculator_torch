@@ -823,6 +823,11 @@ class SFcalculator(object):
             print(
                 f"{self.bin_labels[i]:<15},{N_work:7d},{N_free:7d},{assert_numpy(r_worki):7.3f},{assert_numpy(r_freei):7.3f},{assert_numpy(self.kmasks[i]):7.3f},{assert_numpy(self.kisos[i]):7.3f}"
             )
+        
+        self.r_work, self.r_free = r_factor(self.Fo, torch.abs(ftotal), self.free_flag)
+        print(f"r_work: {assert_numpy(self.r_work):7.3f}")
+        print(f"r_free: {assert_numpy(self.r_free):7.3f}")
+        
 
     def calc_fprotein_batch(
         self, atoms_position_batch, NO_Bfactor=False, Return=False, PARTITION=20
