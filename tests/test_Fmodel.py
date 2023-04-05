@@ -46,7 +46,7 @@ def test_calc_fall(data_pdb, data_mtz_exp, data_mtz_fmodel_ksol0, data_mtz_fmode
     Fsolvent = sfcalculator.calc_fsolvent(
         dmin_mask=6.0, dmin_nonzero=3.0, Return=Return)
     sfcalculator.assign_resolution_bins(return_labels=False)
-    sfcalculator.get_scales_lbfgs(ls_steps=2, r_steps=2, ls_lr=0.0001, r_lr=0.0001, verbose=False)
+    sfcalculator.get_scales_lbfgs(ls_steps=2, r_steps=2, ls_lr=0.00001, r_lr=0.00001, verbose=False)
     Ftotal = sfcalculator.calc_ftotal()
     assert len(Ftotal) == 3197
     assert assert_numpy(sfcalculator.r_free) < 0.15

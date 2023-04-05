@@ -130,7 +130,7 @@ def DWF_aniso(aniso_uw, orth2frac_tensor, HKL_array):
     A 2D [N_atoms, N_HKLs] float32 tensor with DWF corresponding to different atoms and different HKLs
     """
     HKL_tensor = torch.tensor(HKL_array, device=try_gpu(), dtype=torch.float32)
-    Ustar = torch.einsum("xy, ayz, wz", orth2frac_tensor, aniso_uw, orth2frac_tensor)
+    Ustar = torch.einsum("xy,ayz,wz->axw", orth2frac_tensor, aniso_uw, orth2frac_tensor)
     log_arg = (
         -2.0 * np.pi**2 * torch.einsum("rx,axy,ry->ar", HKL_tensor, Ustar, HKL_tensor)
     )

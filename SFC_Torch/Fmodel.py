@@ -594,17 +594,17 @@ class SFcalculator(object):
 
     def _init_uaniso(self, requires_grad=True):
         """
-        Use the analytical solutuon discussed to initialize Uaniso per resolution bin
+        Use the analytical solutuon discussed to initialize Uaniso
         Afonine, P. V., et al. Acta Crystallographica Section D: Biological Crystallography 69.4 (2013): 625-634.
 
         Note: Only work when you have mtz data, self.Fo
         """
-        uanisos = []
+        s = self.HKL_array
+        V = np.concatenate([s**2, 2 * s[:, [0, 2, 1]] * s[:, [1, 0, 2]]], axis=-1)
+        Z = np.zeros((len(s),))
         for bin_i in np.sort(np.unique(self.bins)):
-            index_i = (~self.free_flag) & (self.bins == bin_i)
-            s = self.HKL_array[index_i]
-            V = np.concatenate([s**2, 2 * s[:, [0, 2, 1]] * s[:, [1, 0, 2]]], axis=-1)
-            Z = assert_numpy(
+            index_i = self.bins == bin_i
+            Z[index_i] = assert_numpy(
                 torch.log(
                     self.Fo[index_i]
                     / (
@@ -617,11 +617,14 @@ class SFcalculator(object):
                 )
                 / (2.0 * np.pi**2)
             )
-            M = V.T @ V  # M = np.einsum("ki,kj->ij", V, V)
-            b = -np.sum(Z * V.T, axis=-1)
-            U = np.linalg.inv(M) @ b
-            uanisos.append(torch.tensor(U).to(self.Fo).requires_grad_(requires_grad))
-        return uanisos
+        # use only working set
+        V = V[~self.free_flag]
+        Z = Z[~self.free_flag]
+        M = V.T @ V  # M = np.einsum("ki,kj->ij", V, V)
+        b = -np.sum(Z * V.T, axis=-1)
+        U = np.linalg.inv(M) @ b
+        uaniso = torch.tensor(U).to(self.Fo).requires_grad_(requires_grad)
+        return uaniso
 
     def _set_scales(
         self,
@@ -639,15 +642,12 @@ class SFcalculator(object):
             torch.tensor(kiso).to(self.atom_pos_frac).requires_grad_(requires_grad)
             for i in range(self.n_bins)
         ]
-        self.uanisos = [
-            torch.tensor(uaniso).to(self.atom_pos_frac).requires_grad_(requires_grad)
-            for i in range(self.n_bins)
-        ]
+        self.uaniso = torch.tensor(uaniso).to(self.atom_pos_frac).requires_grad_(requires_grad)
 
     def init_scales(self, requires_grad=True):
         if hasattr(self, "Fo"):
             self.kmasks, self.kisos = self._init_kmask_kiso(requires_grad=requires_grad)
-            self.uanisos = self._init_uaniso(requires_grad=requires_grad)
+            self.uaniso = self._init_uaniso(requires_grad=requires_grad)
         else:
             self._set_scales(requires_grad)
 
@@ -673,7 +673,7 @@ class SFcalculator(object):
             loss.backward()
             return loss
 
-        params = self.kmasks + self.kisos + self.uanisos
+        params = self.kmasks + self.kisos + [self.uaniso]
         self.lbfgs = torch.optim.LBFGS(params, lr=lr)
         loss_track = []
         for _ in range(n_steps):
@@ -718,7 +718,7 @@ class SFcalculator(object):
             loss.backward()
             return loss
 
-        params = self.kmasks + self.kisos + self.uanisos
+        params = self.kmasks + self.kisos + [self.uaniso]
         self.lbfgs = torch.optim.LBFGS(params, lr=lr)
         loss_track = []
         for _ in range(n_steps):
@@ -742,7 +742,13 @@ class SFcalculator(object):
             return loss_track
 
     def get_scales_lbfgs(
-        self, ls_steps=3, r_steps=3, ls_lr=0.0001, r_lr=0.0001, initialize=True, verbose=True
+        self,
+        ls_steps=3,
+        r_steps=3,
+        ls_lr=0.0001,
+        r_lr=0.0001,
+        initialize=True,
+        verbose=True,
     ):
         self._get_scales_lbfgs_LS(ls_steps, ls_lr, verbose, initialize)
         self._get_scales_lbfgs_r(r_steps, r_lr, verbose, initialize=False)
@@ -755,7 +761,7 @@ class SFcalculator(object):
         fmodel_i = (
             self.kisos[bin_i]
             * aniso_scaling(
-                self.uanisos[bin_i],
+                self.uaniso,
                 HKL_array[index_i],
             )
             * (Fprotein[index_i] + scaled_fmask_i)
@@ -823,11 +829,10 @@ class SFcalculator(object):
             print(
                 f"{self.bin_labels[i]:<15},{N_work:7d},{N_free:7d},{assert_numpy(r_worki):7.3f},{assert_numpy(r_freei):7.3f},{assert_numpy(self.kmasks[i]):7.3f},{assert_numpy(self.kisos[i]):7.3f}"
             )
-        
+
         self.r_work, self.r_free = r_factor(self.Fo, torch.abs(ftotal), self.free_flag)
         print(f"r_work: {assert_numpy(self.r_work):7.3f}")
         print(f"r_free: {assert_numpy(self.r_free):7.3f}")
-        
 
     def calc_fprotein_batch(
         self, atoms_position_batch, NO_Bfactor=False, Return=False, PARTITION=20
@@ -964,7 +969,7 @@ class SFcalculator(object):
         fmodel_i = (
             self.kisos[bin_i]
             * aniso_scaling(
-                self.uanisos[bin_i],
+                self.uaniso,
                 HKL_array[index_i],
             )
             * (Fprotein[:, index_i] + scaled_fmask_i)
