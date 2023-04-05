@@ -111,7 +111,7 @@ def DWF_iso(b_iso, dr2_array):
     return torch.exp(-b_iso.view([-1, 1]) * dr2_tensor / 4.0).type(torch.float32)
 
 
-def DWF_aniso(aniso_uw, orth2frac_tensor, HKL_array):
+def DWF_aniso(aniso_uw, orth2frac_tensor, HKL_tensor):
     """
     Calculate Debye_Waller Factor with anisotropic B Factor, Rupp P641
     DWF_aniso = exp[-2 * pi^2 * (h^T U^* h))]
@@ -123,13 +123,12 @@ def DWF_aniso(aniso_uw, orth2frac_tensor, HKL_array):
         Anisotropic B factor Uw matrix
         [[[U11, U12, U13], [U12, U22, U23], [U13, U23, U33]]...], of diffferent particles
 
-    HKL_array: array of HKL index, [N_HKLs,3]
+    HKL_array: tensor of HKL index, [N_HKLs,3]
 
     Return:
     -------
     A 2D [N_atoms, N_HKLs] float32 tensor with DWF corresponding to different atoms and different HKLs
     """
-    HKL_tensor = torch.tensor(HKL_array, device=try_gpu(), dtype=torch.float32)
     Ustar = torch.einsum("xy,ayz,wz->axw", orth2frac_tensor, aniso_uw, orth2frac_tensor)
     log_arg = (
         -2.0 * np.pi**2 * torch.einsum("rx,axy,ry->ar", HKL_tensor, Ustar, HKL_tensor)

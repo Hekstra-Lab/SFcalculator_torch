@@ -354,7 +354,6 @@ class SFcalculator(object):
         atoms_biso_tensor=None,
         atoms_aniso_uw_tensor=None,
         atoms_occ_tensor=None,
-        NO_Bfactor=False,
         Return=False,
     ):
         """
@@ -422,7 +421,6 @@ class SFcalculator(object):
             self.atom_b_iso,
             self.atom_aniso_uw,
             self.atom_occ,
-            NO_Bfactor=NO_Bfactor,
         )
         if not self.HKL_array is None:
             self.Fprotein_HKL = self.Fprotein_asu[self.asu2HKL_index]
@@ -642,7 +640,9 @@ class SFcalculator(object):
             torch.tensor(kiso).to(self.atom_pos_frac).requires_grad_(requires_grad)
             for i in range(self.n_bins)
         ]
-        self.uaniso = torch.tensor(uaniso).to(self.atom_pos_frac).requires_grad_(requires_grad)
+        self.uaniso = (
+            torch.tensor(uaniso).to(self.atom_pos_frac).requires_grad_(requires_grad)
+        )
 
     def init_scales(self, requires_grad=True):
         if hasattr(self, "Fo"):
@@ -835,7 +835,7 @@ class SFcalculator(object):
         print(f"r_free: {assert_numpy(self.r_free):7.3f}")
 
     def calc_fprotein_batch(
-        self, atoms_position_batch, NO_Bfactor=False, Return=False, PARTITION=20
+        self, atoms_position_batch, Return=False, PARTITION=20
     ):
         """
         Calculate the Fprotein with batched models. Most parameters are similar to `Calc_Fprotein`
@@ -863,7 +863,6 @@ class SFcalculator(object):
             self.atom_b_iso,
             self.atom_aniso_uw,
             self.atom_occ,
-            NO_Bfactor=NO_Bfactor,
             PARTITION=PARTITION,
         )  # [N_batch, N_Hasus]
 
@@ -1053,7 +1052,6 @@ def F_protein(
     atom_b_iso,
     atom_aniso_uw,
     atom_occ,
-    NO_Bfactor=False,
 ):
     """
     Calculate Protein Structural Factor from an atomic model
@@ -1065,20 +1063,10 @@ def F_protein(
     # DWF is the Debye-Waller Factor, has isotropic and anisotropic version, based on the PDB file input, Rupp's Book P641
     HKL_tensor = torch.tensor(HKL_array, dtype=torch.float32, device=try_gpu())
 
-    if NO_Bfactor:
-        magnitude = fullsf_tensor * atom_occ[..., None]  # [N_atom, N_HKLs]
-    else:
-        # DWF calculator
-        dwf_iso = DWF_iso(atom_b_iso, dr2_array)
-        dwf_aniso = DWF_aniso(atom_aniso_uw, orth2frac_tensor, HKL_array)
-        # Some atoms do not have Anisotropic U
-        mask_vec = torch.all(torch.all(atom_aniso_uw == 0.0, dim=-1), dim=-1)
-        dwf_all = dwf_aniso
-        dwf_all[mask_vec] = dwf_iso[mask_vec]
-
-        # Apply Atomic Structure Factor and Occupancy for magnitude
-        magnitude = dwf_all * fullsf_tensor * atom_occ[..., None]  # [N_atoms, N_HKLs]
-
+    oc_sf = fullsf_tensor * atom_occ[..., None]  # [N_atom, N_HKLs]
+    # DWF calculator
+    dwf_iso = DWF_iso(atom_b_iso, dr2_array)  # [N_atoms, N_HKLs]
+    mask_vec = torch.all(torch.all(atom_aniso_uw == 0.0, dim=-1), dim=-1)
     # Vectorized phase calculation
     # sym_oped_pos_frac = (
     #     torch.permute(torch.tensordot(R_G_tensor_stack, atom_pos_frac.T, 1), [2, 0, 1])
@@ -1088,14 +1076,17 @@ def F_protein(
     sym_oped_pos_frac = (
         torch.einsum("oxy,ay->aox", R_G_tensor_stack, atom_pos_frac) + T_G_tensor_stack
     )
+    sym_oped_hkl = torch.einsum("rx,oxy->roy", HKL_tensor, R_G_tensor_stack)
     exp_phase = 0.0
     # Loop through symmetry operations instead of fully vectorization, to reduce the memory cost
     for i in range(sym_oped_pos_frac.size(dim=1)):
-        phase_G = (
-            2 * np.pi * torch.tensordot(HKL_tensor, sym_oped_pos_frac[:, i, :].T, 1)
-        )
-        exp_phase = exp_phase + torch.exp(1j * phase_G)
-    F_calc = torch.sum(exp_phase * magnitude.T, dim=-1)
+        phase_G = 2 * np.pi * torch.einsum("ax,rx->ar", sym_oped_pos_frac[:, i, :], HKL_tensor) # [N_atom, N_HKLs]
+        dwf_aniso = DWF_aniso(
+            atom_aniso_uw, orth2frac_tensor, sym_oped_hkl[:, i, :]
+        )  # [N_atom, N_HKLs]
+        dwf_all = torch.where(mask_vec[:, None], dwf_iso, dwf_aniso)
+        exp_phase = exp_phase + dwf_all * torch.exp(1j * phase_G)
+    F_calc = torch.sum(exp_phase * oc_sf, dim=0)
     return F_calc
 
 
@@ -1110,7 +1101,6 @@ def F_protein_batch(
     atom_b_iso,
     atom_aniso_uw,
     atom_occ,
-    NO_Bfactor=False,
     PARTITION=20,
 ):
     """
@@ -1126,19 +1116,9 @@ def F_protein_batch(
     HKL_tensor = torch.tensor(HKL_array, device=try_gpu()).type(torch.float32)
     batchsize = atom_pos_frac_batch.shape[0]
 
-    if NO_Bfactor:
-        magnitude = fullsf_tensor * atom_occ[..., None]  # [N_atom, N_HKLs]
-    else:
-        # DWF calculator
-        dwf_iso = DWF_iso(atom_b_iso, dr2_array)
-        dwf_aniso = DWF_aniso(atom_aniso_uw, orth2frac_tensor, HKL_array)
-        # Some atoms do not have Anisotropic U
-        mask_vec = torch.all(torch.all(atom_aniso_uw == 0.0, dim=-1), dim=-1)
-        dwf_all = dwf_aniso
-        dwf_all[mask_vec] = dwf_iso[mask_vec]
-        # Apply Atomic Structure Factor and Occupancy for magnitude
-        magnitude = dwf_all * fullsf_tensor * atom_occ[..., None]  # [N_atoms, N_HKLs]
-
+    oc_sf = fullsf_tensor * atom_occ[..., None]  # [N_atom, N_HKLs]
+    dwf_iso = DWF_iso(atom_b_iso, dr2_array)
+    mask_vec = torch.all(torch.all(atom_aniso_uw == 0.0, dim=-1), dim=-1)
     # Vectorized phase calculation
     # sym_oped_pos_frac = (
     #     torch.tensordot(
@@ -1151,6 +1131,7 @@ def F_protein_batch(
         torch.einsum("bay,oxy->baxo", atom_pos_frac_batch, R_G_tensor_stack)
         + T_G_tensor_stack.T
     )
+    sym_oped_hkl = torch.einsum("rx,oxy->roy", HKL_tensor, R_G_tensor_stack)
     N_ops = R_G_tensor_stack.shape[0]
     N_partition = batchsize // PARTITION + 1
     F_calc = 0.0
@@ -1169,9 +1150,13 @@ def F_protein_batch(
                     sym_oped_pos_frac[start:end, :, :, i], HKL_tensor.T, 1
                 )
             )
-            exp_phase_ij = torch.exp(1j * phase_ij)
+            dwf_aniso = DWF_aniso(
+            atom_aniso_uw, orth2frac_tensor, sym_oped_hkl[:, i, :]
+            )  # [N_atoms, N_HKLs]
+            dwf_all = torch.where(mask_vec[:, None], dwf_iso, dwf_aniso) # [N_atoms, N_HKLs]
+            exp_phase_ij = dwf_all * torch.exp(1j * phase_ij)
             # Shape [PARTITION, N_HKLs], sum over atoms
-            Fcalc_ij = torch.sum(exp_phase_ij * magnitude, dim=1)
+            Fcalc_ij = torch.sum(exp_phase_ij * oc_sf, dim=1)
             # Shape [PARTITION, N_HKLs], sum over symmetry operations
             Fcalc_j = Fcalc_j + Fcalc_ij
         if j == 0:
