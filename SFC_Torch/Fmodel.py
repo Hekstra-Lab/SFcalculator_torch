@@ -174,6 +174,20 @@ class SFcalculator(object):
             self.unit_cell.orthogonalization_matrix.tolist(), device=try_gpu()
         ).type(torch.float32)
 
+        self.reciprocal_cell = self.unit_cell.reciprocal()  # gemmi.UnitCell object
+        # [ar, br, cr, cos(alpha_r), cos(beta_r), cos(gamma_r)]
+        self.reciprocal_cell_paras = torch.tensor(
+            [
+                self.reciprocal_cell.a,
+                self.reciprocal_cell.b,
+                self.reciprocal_cell.c,
+                np.cos(np.deg2rad(self.reciprocal_cell.alpha)),
+                np.cos(np.deg2rad(self.reciprocal_cell.beta)),
+                np.cos(np.deg2rad(self.reciprocal_cell.gamma)),
+            ],
+            device=try_gpu(),
+        ).type(torch.float32)
+
         self.atom_name = []
         self.atom_pos_orth = []
         self.atom_pos_frac = []
@@ -745,8 +759,8 @@ class SFcalculator(object):
         self,
         ls_steps=3,
         r_steps=3,
-        ls_lr=0.0001,
-        r_lr=0.0001,
+        ls_lr=0.1,
+        r_lr=0.1,
         initialize=True,
         verbose=True,
     ):
@@ -762,6 +776,7 @@ class SFcalculator(object):
             self.kisos[bin_i]
             * aniso_scaling(
                 self.uaniso,
+                self.reciprocal_cell_paras,
                 HKL_array[index_i],
             )
             * (Fprotein[index_i] + scaled_fmask_i)
@@ -969,6 +984,7 @@ class SFcalculator(object):
             self.kisos[bin_i]
             * aniso_scaling(
                 self.uaniso,
+                self.reciprocal_cell_paras,
                 HKL_array[index_i],
             )
             * (Fprotein[:, index_i] + scaled_fmask_i)

@@ -137,7 +137,7 @@ def DWF_aniso(aniso_uw, orth2frac_tensor, HKL_tensor):
     return DWF_aniso_vec.type(torch.float32)
 
 
-def aniso_scaling(uaniso, HKL_array):
+def aniso_scaling(uaniso, reciprocal_cell_paras, HKL_array):
     """
     This is used for anisotropic scaling for the overall model
     kaniso = exp(-2 * pi**2 * h^T * Uaniso * h)
@@ -147,6 +147,10 @@ def aniso_scaling(uaniso, HKL_array):
     ----------
     uaniso : torch.tensor, [6,]
         6 unique elements in the anisotropic matrix, [U11,U22,U33,U12,U13,U23]
+
+    reciprocal_cell_paras: list of float or tensor float, [6,]
+        Necessary info of Reciprocal unit cell, [ar, br, cr, cos(alpha_r), cos(beta_r), cos(gamma_r)
+
     HKL_array : numpy.array, [N_HKLs, 3]
         array of HKL index
 
@@ -157,11 +161,14 @@ def aniso_scaling(uaniso, HKL_array):
     HKL_tensor = torch.tensor(HKL_array, device=try_gpu())
     U11, U22, U33, U12, U13, U23 = uaniso
     h, k, l = HKL_tensor.T
+    ar, br, cr, cos_alphar, cos_betar, cos_gammar = reciprocal_cell_paras
     args = (
-        U11 * h**2
-        + U22 * k**2
-        + U33 * l**2
-        + 2 * (h * k * U12 + h * l * U13 + k * l * U23)
+        U11 * h**2 * ar**2
+        + U22 * k**2 * br**2
+        + U33 * l**2 * cr**2
+        + 2 * (h * k * U12 * ar * br * cos_gammar 
+               + h * l * U13 * ar * cr * cos_betar 
+               + k * l * U23 * br * cr * cos_alphar)
     )
     return torch.exp(-2.0 * np.pi**2 * args)
 
