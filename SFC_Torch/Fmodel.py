@@ -65,7 +65,7 @@ class SFcalculator(object):
             The wavelength of scattering source in A
 
         set_experiment: Boolean, default True
-            Whether or not to set Fo and SigF, r_free, r_work from the experimental mtz file. It only works when
+            Whether or not to set Fo, SigF, free_flag and Outlier from the experimental mtz file. It only works when
             the mtzfile_dir is not None
 
         nansubset: list of str, default ['FP', 'SIGFP']
@@ -149,6 +149,8 @@ class SFcalculator(object):
             # d*^2 array according to the HKL list, [N]
             self.dr2asu_array = self.unit_cell.calculate_1_d2_array(self.Hasu_array)
             self.dr2HKL_array = self.unit_cell.calculate_1_d2_array(self.HKL_array)
+            # assign reslution bins
+            self.assign_resolution_bins()
             if set_experiment:
                 self.set_experiment(mtz_reference, freeflag, testset_value)
         else:
@@ -166,6 +168,7 @@ class SFcalculator(object):
                 )
                 self.dr2asu_array = self.unit_cell.calculate_1_d2_array(self.Hasu_array)
                 self.HKL_array = None
+                self.assign_resolution_bins()
 
         self.orth2frac_tensor = torch.tensor(
             self.unit_cell.fractionalization_matrix.tolist(), device=try_gpu()
@@ -265,7 +268,8 @@ class SFcalculator(object):
 
     def set_experiment(self, exp_mtz, freeflag="FreeR_flag", testset_value=0):
         """
-        Set experimental data in the refinement
+        Set experimental data for refinement,
+        including Fo, SigF, free_flag, Outlier
 
         exp_mtz, rs.Dataset, mtzfile read by reciprocalspaceship
         """
@@ -278,6 +282,7 @@ class SFcalculator(object):
             ).type(torch.float32)
         except:
             print("MTZ file doesn't contain 'FP' or 'SIGFP'! Check your data!")
+
         try:
             self.free_flag = np.where(
                 exp_mtz[freeflag].values == testset_value, True, False
@@ -285,8 +290,24 @@ class SFcalculator(object):
         except:
             print("No Free Flag! Check your data!")
 
+        # label outliers
+        exp_mtz.label_centrics(inplace=True)
+        exp_mtz.compute_multiplicity(inplace=True)
+        exp_mtz["SIGN"] = 0.0
+        for i in range(self.n_bins):
+            index_i = self.bins == i
+            exp_mtz.loc[index_i, "SIGN"] = np.mean(
+                exp_mtz[index_i]["FP"].to_numpy() ** 2
+                / exp_mtz[index_i]["EPSILON"].to_numpy()
+            )
+        exp_mtz["EP"] = exp_mtz["FP"] / np.sqrt(exp_mtz["EPSILON"] * exp_mtz["SIGN"])
+        self.Outlier = (
+            (exp_mtz["CENTRIC"] & (exp_mtz["EP"] > 4.89))
+            | ((~exp_mtz["CENTRIC"]) & (exp_mtz["EP"] > 3.72))
+        ).to_numpy(dtype=bool)
+
     def assign_resolution_bins(
-        self, bins=10, Nmin=100, return_labels=True, format_str=".2f"
+        self, bins=10, Nmin=100, return_labels=False, format_str=".2f"
     ):
         """Assign reflections in HKL_array to resolution bins with logarithmic algorithm.
         The labels will be stored in self.bins
@@ -301,7 +322,7 @@ class SFcalculator(object):
             Minimum number of reflections for the first two low-resolution ranges, by default 100
         return_labels : bool, optional
             Whether to return a list of labels corresponding to the edges
-            of each resolution bin, by default True
+            of each resolution bin, by default False
         format_str : str, optional
             Format string for constructing bin labels, by default ".2f"
 
@@ -317,7 +338,7 @@ class SFcalculator(object):
         else:
             assert hasattr(
                 self, "dHasu"
-            ), "Must have resolution stored in dHKL attribute!"
+            ), "Must have resolution stored in dHasu attribute!"
             d = self.dHasu
         assignments, edges = bin_by_logarithmic(d, bins, Nmin)
         self.n_bins = bins
@@ -329,7 +350,7 @@ class SFcalculator(object):
         if return_labels:
             return self.bin_labels
 
-    def inspect_data(self, verbose=True):
+    def inspect_data(self, verbose=False):
         """
         Do an inspection of data, for hints about
         1. solvent percentage for mask calculation
@@ -531,7 +552,7 @@ class SFcalculator(object):
         Is = self.Fo.pow(2)
 
         for bin_i in np.sort(np.unique(self.bins)):
-            index_i = (~self.free_flag) & (self.bins == bin_i)
+            index_i = (~self.free_flag) & (self.bins == bin_i) & (~self.Outlier)
 
             C2 = torch.sum(ws[index_i] * Is[index_i])
             B2 = 2.0 * torch.sum(vs[index_i] * Is[index_i])
@@ -606,17 +627,17 @@ class SFcalculator(object):
 
     def _init_uaniso(self, requires_grad=True):
         """
-        Use the analytical solutuon discussed to initialize Uaniso
+        Use the analytical solutuon discussed to initialize Uaniso per resolution bin
         Afonine, P. V., et al. Acta Crystallographica Section D: Biological Crystallography 69.4 (2013): 625-634.
 
         Note: Only work when you have mtz data, self.Fo
         """
-        s = self.HKL_array
-        V = np.concatenate([s**2, 2 * s[:, [0, 2, 1]] * s[:, [1, 0, 2]]], axis=-1)
-        Z = np.zeros((len(s),))
+        uanisos = []
         for bin_i in np.sort(np.unique(self.bins)):
-            index_i = self.bins == bin_i
-            Z[index_i] = assert_numpy(
+            index_i = (self.bins == bin_i) & (~self.free_flag) & (~self.Outlier)
+            s = self.HKL_array[index_i]
+            V = np.concatenate([s**2, 2 * s[:, [0, 2, 1]] * s[:, [1, 0, 2]]], axis=-1)
+            Z = assert_numpy(
                 torch.log(
                     self.Fo[index_i]
                     / (
@@ -629,14 +650,11 @@ class SFcalculator(object):
                 )
                 / (2.0 * np.pi**2)
             )
-        # use only working set
-        V = V[~self.free_flag]
-        Z = Z[~self.free_flag]
-        M = V.T @ V  # M = np.einsum("ki,kj->ij", V, V)
-        b = -np.sum(Z * V.T, axis=-1)
-        U = np.linalg.inv(M) @ b
-        uaniso = torch.tensor(U).to(self.Fo).requires_grad_(requires_grad)
-        return uaniso
+            M = V.T @ V  # M = np.einsum("ki,kj->ij", V, V)
+            b = -np.sum(Z * V.T, axis=-1)
+            U = np.linalg.inv(M) @ b
+            uanisos.append(torch.tensor(U).to(self.Fo).requires_grad_(requires_grad))
+        return uanisos
 
     def _set_scales(
         self,
@@ -654,14 +672,15 @@ class SFcalculator(object):
             torch.tensor(kiso).to(self.atom_pos_frac).requires_grad_(requires_grad)
             for i in range(self.n_bins)
         ]
-        self.uaniso = (
+        self.uanisos = [
             torch.tensor(uaniso).to(self.atom_pos_frac).requires_grad_(requires_grad)
-        )
+            for i in range(self.n_bins)
+        ]
 
     def init_scales(self, requires_grad=True):
         if hasattr(self, "Fo"):
             self.kmasks, self.kisos = self._init_kmask_kiso(requires_grad=requires_grad)
-            self.uaniso = self._init_uaniso(requires_grad=requires_grad)
+            self.uanisos = self._init_uaniso(requires_grad=requires_grad)
         else:
             self._set_scales(requires_grad)
 
@@ -687,7 +706,7 @@ class SFcalculator(object):
             loss.backward()
             return loss
 
-        params = self.kmasks + self.kisos + [self.uaniso]
+        params = self.kmasks + self.kisos + self.uanisos
         self.lbfgs = torch.optim.LBFGS(params, lr=lr)
         loss_track = []
         for _ in range(n_steps):
@@ -732,7 +751,7 @@ class SFcalculator(object):
             loss.backward()
             return loss
 
-        params = self.kmasks + self.kisos + [self.uaniso]
+        params = self.kmasks + self.kisos + self.uanisos
         self.lbfgs = torch.optim.LBFGS(params, lr=lr)
         loss_track = []
         for _ in range(n_steps):
@@ -775,7 +794,7 @@ class SFcalculator(object):
         fmodel_i = (
             self.kisos[bin_i]
             * aniso_scaling(
-                self.uaniso,
+                self.uanisos[bin_i],
                 self.reciprocal_cell_paras,
                 HKL_array[index_i],
             )
@@ -832,26 +851,29 @@ class SFcalculator(object):
         ftotal = self.calc_ftotal(Return=True)
         _, counts = np.unique(self.bins, return_counts=True)
         print(
-            f"{'Resolution':15},{'N_work':>7},{'N_free':>7},{'R_work':>7},{'R_free':>7},{'k_mask':>7},{'k_iso':>7}"
+            f"{'Resolution':15},{'N_work':>7},{'N_free':>7},{'<Fo>':>7},{'<|Fc|>':>7},{'R_work':>7},{'R_free':>7},{'k_mask':>7},{'k_iso':>7}"
         )
         for i in range(self.n_bins):
-            index_i = self.bins == i
+            index_i = (self.bins == i) & (~self.Outlier)
             r_worki, r_freei = r_factor(
                 self.Fo[index_i], torch.abs(ftotal[index_i]), self.free_flag[index_i]
             )
             N_work = counts[i] - np.sum(self.free_flag[index_i])
             N_free = np.sum(self.free_flag[index_i])
             print(
-                f"{self.bin_labels[i]:<15},{N_work:7d},{N_free:7d},{assert_numpy(r_worki):7.3f},{assert_numpy(r_freei):7.3f},{assert_numpy(self.kmasks[i]):7.3f},{assert_numpy(self.kisos[i]):7.3f}"
+                f"{self.bin_labels[i]:<15},{N_work:7d},{N_free:7d},{assert_numpy(torch.mean(self.Fo[index_i])):7.1f},{assert_numpy(torch.mean(torch.abs(ftotal[index_i]))):7.1f},{assert_numpy(r_worki):7.3f},{assert_numpy(r_freei):7.3f},{assert_numpy(self.kmasks[i]):7.3f},{assert_numpy(self.kisos[i]):7.3f}"
             )
 
-        self.r_work, self.r_free = r_factor(self.Fo, torch.abs(ftotal), self.free_flag)
+        self.r_work, self.r_free = r_factor(
+            self.Fo[~self.Outlier],
+            torch.abs(ftotal)[~self.Outlier],
+            self.free_flag[~self.Outlier],
+        )
         print(f"r_work: {assert_numpy(self.r_work):7.3f}")
         print(f"r_free: {assert_numpy(self.r_free):7.3f}")
+        print(f"Number of outliers: {np.sum(self.Outlier):7d}")
 
-    def calc_fprotein_batch(
-        self, atoms_position_batch, Return=False, PARTITION=20
-    ):
+    def calc_fprotein_batch(self, atoms_position_batch, Return=False, PARTITION=20):
         """
         Calculate the Fprotein with batched models. Most parameters are similar to `Calc_Fprotein`
 
@@ -983,7 +1005,7 @@ class SFcalculator(object):
         fmodel_i = (
             self.kisos[bin_i]
             * aniso_scaling(
-                self.uaniso,
+                self.uanisos[bin_i],
                 self.reciprocal_cell_paras,
                 HKL_array[index_i],
             )
@@ -1096,7 +1118,11 @@ def F_protein(
     exp_phase = 0.0
     # Loop through symmetry operations instead of fully vectorization, to reduce the memory cost
     for i in range(sym_oped_pos_frac.size(dim=1)):
-        phase_G = 2 * np.pi * torch.einsum("ax,rx->ar", sym_oped_pos_frac[:, i, :], HKL_tensor) # [N_atom, N_HKLs]
+        phase_G = (
+            2
+            * np.pi
+            * torch.einsum("ax,rx->ar", sym_oped_pos_frac[:, i, :], HKL_tensor)
+        )  # [N_atom, N_HKLs]
         dwf_aniso = DWF_aniso(
             atom_aniso_uw, orth2frac_tensor, sym_oped_hkl[:, i, :]
         )  # [N_atom, N_HKLs]
@@ -1167,9 +1193,11 @@ def F_protein_batch(
                 )
             )
             dwf_aniso = DWF_aniso(
-            atom_aniso_uw, orth2frac_tensor, sym_oped_hkl[:, i, :]
+                atom_aniso_uw, orth2frac_tensor, sym_oped_hkl[:, i, :]
             )  # [N_atoms, N_HKLs]
-            dwf_all = torch.where(mask_vec[:, None], dwf_iso, dwf_aniso) # [N_atoms, N_HKLs]
+            dwf_all = torch.where(
+                mask_vec[:, None], dwf_iso, dwf_aniso
+            )  # [N_atoms, N_HKLs]
             exp_phase_ij = dwf_all * torch.exp(1j * phase_ij)
             # Shape [PARTITION, N_HKLs], sum over atoms
             Fcalc_ij = torch.sum(exp_phase_ij * oc_sf, dim=1)

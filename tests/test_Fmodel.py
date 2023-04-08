@@ -45,7 +45,6 @@ def test_calc_fall(data_pdb, data_mtz_exp, data_mtz_fmodel_ksol0, data_mtz_fmode
     Fprotein = sfcalculator.calc_fprotein(Return=Return)
     Fsolvent = sfcalculator.calc_fsolvent(
         dmin_mask=6.0, dmin_nonzero=3.0, Return=Return)
-    sfcalculator.assign_resolution_bins(return_labels=False)
     sfcalculator.get_scales_lbfgs(ls_steps=2, r_steps=2, ls_lr=0.00001, r_lr=0.00001, verbose=False)
     Ftotal = sfcalculator.calc_ftotal()
     assert len(Ftotal) == 3197
@@ -98,9 +97,8 @@ def test_calc_fall(data_pdb, data_mtz_exp, data_mtz_fmodel_ksol0, data_mtz_fmode
 
 def test_calc_ftotal_nodata(data_pdb):
     sfcalculator = SFcalculator(
-        data_pdb, mtzfile_dir=None, dmin=2.5, set_experiment=True)
+        data_pdb, mtzfile_dir=None, dmin=2.5, set_experiment=False)
     sfcalculator.inspect_data()
-    sfcalculator.assign_resolution_bins(return_labels=False)
     sfcalculator.calc_fprotein(Return=False)
     sfcalculator.calc_fsolvent(
         dmin_mask=6.0, dmin_nonzero=3.0, Return=False)
@@ -125,7 +123,6 @@ def test_calc_fall_batch(data_pdb, data_mtz_exp, Anomalous, partition_size):
     Fsolvent_batch = sfcalculator.calc_fsolvent_batch(
         dmin_mask=6.0, dmin_nonzero=3.0, Return=True, PARTITION=partition_size)
     
-    sfcalculator.assign_resolution_bins(return_labels=False)
     sfcalculator.init_scales(requires_grad=False)
     Ftotal = sfcalculator.calc_ftotal()
     Ftotal_batch = sfcalculator.calc_ftotal_batch()
@@ -152,7 +149,6 @@ def test_prepare_dataset(data_pdb, data_mtz_exp):
     sfcalculator = SFcalculator(
         data_pdb, mtzfile_dir=data_mtz_exp, set_experiment=True)
     sfcalculator.inspect_data()
-    sfcalculator.assign_resolution_bins()
     sfcalculator.calc_fprotein(Return=False)
     sfcalculator.calc_fsolvent(
         dmin_mask=6.0, dmin_nonzero=3.0, Return=False)
