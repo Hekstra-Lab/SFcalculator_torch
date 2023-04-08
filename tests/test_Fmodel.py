@@ -49,6 +49,8 @@ def test_calc_fall(data_pdb, data_mtz_exp, data_mtz_fmodel_ksol0, data_mtz_fmode
     Ftotal = sfcalculator.calc_ftotal()
     assert len(Ftotal) == 3197
     assert assert_numpy(sfcalculator.r_free) < 0.15
+    sfcalculator.get_scales_adam(lr=0.01, n_steps=20, sub_ratio=0.3, initialize=True, verbose=False)
+    assert assert_numpy(sfcalculator.r_free) < 0.15
 
     Fcalc = rs.read_mtz(data_mtz_fmodel_ksol0)
     Fmodel = rs.read_mtz(data_mtz_fmodel_ksol1)

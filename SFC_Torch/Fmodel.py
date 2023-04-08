@@ -700,7 +700,11 @@ class SFcalculator(object):
             Fmodel_mag = torch.abs(Fmodel)
             # LS loss
             loss = torch.sum(
-                (self.Fo[~self.free_flag] - Fmodel_mag[~self.free_flag]) ** 2
+                (
+                    self.Fo[(~self.free_flag) & (~self.Outlier)]
+                    - Fmodel_mag[(~self.free_flag) & (~self.Outlier)]
+                )
+                ** 2
             )
             self.lbfgs.zero_grad()
             loss.backward()
@@ -714,7 +718,11 @@ class SFcalculator(object):
             loss = self.lbfgs.step(closure)
             Fmodel = self.calc_ftotal()
             Fmodel_mag = torch.abs(Fmodel)
-            r_work, r_free = r_factor(self.Fo, Fmodel_mag, self.free_flag)
+            r_work, r_free = r_factor(
+                self.Fo[~self.Outlier],
+                Fmodel_mag[~self.Outlier],
+                self.free_flag[~self.Outlier],
+            )
             loss_track.append(
                 [assert_numpy(loss), assert_numpy(r_work), assert_numpy(r_free)]
             )
@@ -745,8 +753,11 @@ class SFcalculator(object):
             Fmodel_mag = torch.abs(Fmodel)
             # R factor
             loss = torch.sum(
-                torch.abs(self.Fo[~self.free_flag] - Fmodel_mag[~self.free_flag])
-            ) / torch.sum(self.Fo[~self.free_flag])
+                torch.abs(
+                    self.Fo[(~self.free_flag) & (~self.Outlier)]
+                    - Fmodel_mag[(~self.free_flag) & (~self.Outlier)]
+                )
+            ) / torch.sum(self.Fo[(~self.free_flag) & (~self.Outlier)])
             self.lbfgs.zero_grad()
             loss.backward()
             return loss
@@ -759,7 +770,11 @@ class SFcalculator(object):
             loss = self.lbfgs.step(closure)
             Fmodel = self.calc_ftotal()
             Fmodel_mag = torch.abs(Fmodel)
-            r_work, r_free = r_factor(self.Fo, Fmodel_mag, self.free_flag)
+            r_work, r_free = r_factor(
+                self.Fo[~self.Outlier],
+                Fmodel_mag[~self.Outlier],
+                self.free_flag[~self.Outlier],
+            )
             loss_track.append(
                 [assert_numpy(loss), assert_numpy(r_work), assert_numpy(r_free)]
             )
@@ -785,6 +800,76 @@ class SFcalculator(object):
     ):
         self._get_scales_lbfgs_LS(ls_steps, ls_lr, verbose, initialize)
         self._get_scales_lbfgs_r(r_steps, r_lr, verbose, initialize=False)
+
+    def get_scales_adam(
+        self, 
+        lr=0.1, 
+        n_steps=100, 
+        sub_ratio=0.3, 
+        initialize=True, 
+        verbose=False
+    ):
+        def adam_opt_i(
+            bin_i, index_i, sub_ratio=0.3, lr=0.001, n_steps=100, verbose=False
+        ):
+            def adam_stepopt(sub_boolean_mask):
+                Fmodel_i = self._calc_ftotal_bini(
+                    bin_i, index_i, self.HKL_array, self.Fprotein_HKL, self.Fmask_HKL
+                )
+                Fmodel_mag = torch.abs(Fmodel_i)
+                # LS loss with subsampling
+                fo_i_sub = fo_i[sub_boolean_mask]
+                Fmodel_i_sub = Fmodel_mag[sub_boolean_mask]
+                free_flagi_sub = free_flagi[sub_boolean_mask]
+                loss = torch.sum(
+                    (fo_i_sub[~free_flagi_sub] - Fmodel_i_sub[~free_flagi_sub]) ** 2
+                )
+                # loss = torch.sum(torch.abs(fo_i_sub[~free_flagi_sub] - Fmodel_i_sub[~free_flagi_sub]))/torch.sum(Fmodel_i_sub[~free_flagi_sub])
+                r_work, r_free = r_factor(fo_i, Fmodel_mag, free_flagi)
+                adam.zero_grad()
+                loss.backward()
+                adam.step()
+                return loss, r_work, r_free
+
+            params = [self.kmasks[bin_i], self.kisos[bin_i], self.uanisos[bin_i]]
+            adam = torch.optim.Adam(params, lr=lr)
+            for _ in range(n_steps):
+                start_time = time.time()
+                sub_boolean_mask = (
+                    np.random.rand(
+                        np.sum(index_i),
+                    )
+                    < sub_ratio
+                )
+                temp = adam_stepopt(sub_boolean_mask)
+                time_this_round = round(time.time() - start_time, 3)
+                str_ = "Time: " + str(time_this_round)
+                if verbose:
+                    print("Scale", *[assert_numpy(i) for i in temp], str_, flush=True)
+
+        if initialize:
+            self.init_scales(requires_grad=True)
+
+        for bin_i in range(self.n_bins):
+            index_i = (self.bins == bin_i) & (~self.Outlier)
+            fo_i = self.Fo[index_i]
+            free_flagi = self.free_flag[index_i]
+            adam_opt_i(
+                bin_i,
+                index_i,
+                lr=lr,
+                n_steps=n_steps,
+                sub_ratio=sub_ratio,
+                verbose=verbose,
+            )
+
+        Fmodel = self.calc_ftotal()
+        Fmodel_mag = torch.abs(Fmodel)
+        self.r_work, self.r_free = r_factor(
+            self.Fo[~self.Outlier],
+            Fmodel_mag[~self.Outlier],
+            self.free_flag[~self.Outlier],
+        )
 
     def _calc_ftotal_bini(self, bin_i, index_i, HKL_array, Fprotein, Fmask):
         """
@@ -851,7 +936,7 @@ class SFcalculator(object):
         ftotal = self.calc_ftotal(Return=True)
         _, counts = np.unique(self.bins, return_counts=True)
         print(
-            f"{'Resolution':15},{'N_work':>7},{'N_free':>7},{'<Fo>':>7},{'<|Fc|>':>7},{'R_work':>7},{'R_free':>7},{'k_mask':>7},{'k_iso':>7}"
+            f"{'Resolution':15},{'N_work':>7},{'N_free':>7},{'<Fobs>':>7},{'<|Fmodel|>':>7},{'R_work':>7},{'R_free':>7},{'k_mask':>7},{'k_iso':>7}"
         )
         for i in range(self.n_bins):
             index_i = (self.bins == i) & (~self.Outlier)
@@ -869,9 +954,9 @@ class SFcalculator(object):
             torch.abs(ftotal)[~self.Outlier],
             self.free_flag[~self.Outlier],
         )
-        print(f"r_work: {assert_numpy(self.r_work):7.3f}")
-        print(f"r_free: {assert_numpy(self.r_free):7.3f}")
-        print(f"Number of outliers: {np.sum(self.Outlier):7d}")
+        print(f"r_work: {assert_numpy(self.r_work):<7.3f}")
+        print(f"r_free: {assert_numpy(self.r_free):<7.3f}")
+        print(f"Number of outliers: {np.sum(self.Outlier):<7d}")
 
     def calc_fprotein_batch(self, atoms_position_batch, Return=False, PARTITION=20):
         """
