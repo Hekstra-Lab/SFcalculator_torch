@@ -15,3 +15,12 @@ To install this package:
     ```bash
     pip install SFcalculator-torch
     ```
+ 
+### Citation
+
+We are in the process of writing a paper about this work, if you are interested in using the tool, please contact the authors for a discussion at the first place
+
+Minhuan Li, minhuanli@g.harvard.edu
+
+Doeke Hekstra, doeke_hekstra@harvard.edu
+
