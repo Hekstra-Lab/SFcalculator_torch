@@ -39,7 +39,7 @@ class SFcalculator(object):
         anomalous=False,
         wavelength=None,
         set_experiment=True,
-        nansubset=["FP", "SIGFP"],
+        expcolumns=["FP", "SIGFP"],
         freeflag="FreeR_flag",
         testset_value=0,
     ):
@@ -68,8 +68,8 @@ class SFcalculator(object):
             Whether or not to set Fo, SigF, free_flag and Outlier from the experimental mtz file. It only works when
             the mtzfile_dir is not None
 
-        nansubset: list of str, default ['FP', 'SIGFP']
-            list of column names to examine the nan values
+        expcolumns: list of str, default ['FP', 'SIGFP']
+            list of column names used as expeimental data
         """
         structure = gemmi.read_pdb(PDBfile_dir)  # gemmi.Structure object
         self.unit_cell = structure.cell  # gemmi.UnitCell object
@@ -113,9 +113,9 @@ class SFcalculator(object):
         if mtzfile_dir:
             mtz_reference = rs.read_mtz(mtzfile_dir)
             try:
-                mtz_reference.dropna(axis=0, subset=nansubset, inplace=True)
+                mtz_reference.dropna(axis=0, subset=expcolumns, inplace=True)
             except:
-                raise ValueError(f"{nansubset} columns not included in the mtz file!")
+                raise ValueError(f"{expcolumns} columns not included in the mtz file!")
             if anomalous:
                 # Try to get the wavelength from MTZ file
                 try:
@@ -152,7 +152,7 @@ class SFcalculator(object):
             # assign reslution bins
             self.assign_resolution_bins()
             if set_experiment:
-                self.set_experiment(mtz_reference, freeflag, testset_value)
+                self.set_experiment(mtz_reference, expcolumns, freeflag, testset_value)
         else:
             if not dmin:
                 raise ValueError(
@@ -266,7 +266,7 @@ class SFcalculator(object):
             ).type(torch.float32)
         self.inspected = False
 
-    def set_experiment(self, exp_mtz, freeflag="FreeR_flag", testset_value=0):
+    def set_experiment(self, exp_mtz, expcolumns=["FP", "SIGFP"], freeflag="FreeR_flag", testset_value=0):
         """
         Set experimental data for refinement,
         including Fo, SigF, free_flag, Outlier
@@ -274,14 +274,14 @@ class SFcalculator(object):
         exp_mtz, rs.Dataset, mtzfile read by reciprocalspaceship
         """
         try:
-            self.Fo = torch.tensor(exp_mtz["FP"].to_numpy(), device=try_gpu()).type(
+            self.Fo = torch.tensor(exp_mtz[expcolumns[0]].to_numpy(), device=try_gpu()).type(
                 torch.float32
             )
             self.SigF = torch.tensor(
-                exp_mtz["SIGFP"].to_numpy(), device=try_gpu()
+                exp_mtz[expcolumns[1]].to_numpy(), device=try_gpu()
             ).type(torch.float32)
         except:
-            print("MTZ file doesn't contain 'FP' or 'SIGFP'! Check your data!")
+            print(f"MTZ file doesn't contain {expcolumns[0]} or {expcolumns[1]}! Check your data!")
 
         try:
             self.free_flag = np.where(
@@ -936,7 +936,7 @@ class SFcalculator(object):
         ftotal = self.calc_ftotal(Return=True)
         _, counts = np.unique(self.bins, return_counts=True)
         print(
-            f"{'Resolution':15},{'N_work':>7},{'N_free':>7},{'<Fobs>':>7},{'<|Fmodel|>':>7},{'R_work':>7},{'R_free':>7},{'k_mask':>7},{'k_iso':>7}"
+            f"{'Resolution':15} {'N_work':>7} {'N_free':>7} {'<Fobs>':>7} {'<|Fmodel|>':>9} {'R_work':>7} {'R_free':>7} {'k_mask':>7} {'k_iso':>7}"
         )
         for i in range(self.n_bins):
             index_i = (self.bins == i) & (~self.Outlier)
@@ -946,9 +946,8 @@ class SFcalculator(object):
             N_work = counts[i] - np.sum(self.free_flag[index_i])
             N_free = np.sum(self.free_flag[index_i])
             print(
-                f"{self.bin_labels[i]:<15},{N_work:7d},{N_free:7d},{assert_numpy(torch.mean(self.Fo[index_i])):7.1f},{assert_numpy(torch.mean(torch.abs(ftotal[index_i]))):7.1f},{assert_numpy(r_worki):7.3f},{assert_numpy(r_freei):7.3f},{assert_numpy(self.kmasks[i]):7.3f},{assert_numpy(self.kisos[i]):7.3f}"
+                f"{self.bin_labels[i]:<15} {N_work:7d} {N_free:7d} {assert_numpy(torch.mean(self.Fo[index_i])):7.1f} {assert_numpy(torch.mean(torch.abs(ftotal[index_i]))):9.1f} {assert_numpy(r_worki):7.3f} {assert_numpy(r_freei):7.3f} {assert_numpy(self.kmasks[i]):7.3f} {assert_numpy(self.kisos[i]):7.3f}"
             )
-
         self.r_work, self.r_free = r_factor(
             self.Fo[~self.Outlier],
             torch.abs(ftotal)[~self.Outlier],
