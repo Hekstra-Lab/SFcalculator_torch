@@ -1,6 +1,9 @@
 import gemmi
 import torch
 import numpy as np
+import urllib.request, os
+from tqdm import tqdm
+import pandas as pd
 
 from .utils import try_gpu
 
@@ -276,3 +279,66 @@ class PDBParser(object):
     def savePDB(self, savefilename, include_header=True):
         structure = self.to_gemmi(include_header=include_header)
         structure.write_pdb(savefilename)
+
+def fetch_pdb(idlist, outpath):
+    '''
+    Fetch pdb and mtz files from Protein Data Bank, with static urllib
+
+    Parameters
+    ----------
+    idlist : [str]
+        List of PDB ids
+    
+    outpath : str
+
+    Returns
+    -------
+    DataFrame of fetch stats
+
+    pdb files will be saved at outpath/models/
+    mtz files will be saved at outpath/reflections/
+    Record csv file will be saved at outpath/fetchpdb.csv
+    '''
+    model_path = os.path.join(outpath, 'models/')
+    reflection_path = os.path.join(outpath, 'reflections/')
+    for folder in [model_path, reflection_path]:
+        if os.path.exists(folder):
+            print(f"{folder:<80}" + f"{'already exists': >20}")
+        else:
+            os.makedirs(folder)
+            print(f"{folder:<80}" + f"{'created': >20}")
+    
+    codes = []
+    with_pdb = []
+    with_mtz = []
+    for pdb_code in tqdm(idlist):
+        valid_code = pdb_code.lower()
+        
+        pdblink = "https://files.rcsb.org/download/" + valid_code.upper() + ".pdb"
+        mtzlink = "https://edmaps.rcsb.org/coefficients/" + valid_code + ".mtz"
+        codes.append(valid_code)
+        try:
+            urllib.request.urlretrieve(pdblink, os.path.join(model_path, valid_code+".pdb"))
+            with_pdb.append(1)
+        except:
+            with_pdb.append(0) 
+        try:
+            urllib.request.urlretrieve(mtzlink, os.path.join(reflection_path, valid_code+".mtz"))
+            with_mtz.append(1)
+        except:
+            with_mtz.append(0)
+    
+    stat_df = pd.DataFrame({
+        "code" : codes,
+        "with_pdb" : with_pdb,
+        "with_mtz" : with_mtz
+    })
+    stat_df.to_csv(os.path.join(outpath, "fetchpdb.csv"))
+    return stat_df
+
+
+
+
+
+
+

@@ -5,7 +5,7 @@ from os.path import exists
 import gemmi
 import numpy as np
 
-from SFC_Torch.io import PDBParser
+from SFC_Torch.io import PDBParser, fetch_pdb
 
 
 def test_setdata(data_pdb):
@@ -80,3 +80,12 @@ def test_fromatomslices(data_pdb, inplace):
         assert b.cell == a.cell
         assert b.spacegroup.hm == a.spacegroup.hm
         assert len(b.atom_pos) == 55
+
+def test_fetchpdb():
+    df = fetch_pdb(['4lZt', '1cTS'], outpath='../dev/')
+    assert df['code'].tolist() == ['4lzt', '1cts']
+    assert df['with_pdb'].tolist() == [1, 1]
+    assert df['with_mtz'].tolist() == [1, 0]
+    assert exists("../dev/models/4lzt.pdb")
+    assert exists("../dev/models/1cts.pdb")    
+    assert exists("../dev/reflections/4lzt.mtz")
