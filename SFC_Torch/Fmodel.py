@@ -291,20 +291,25 @@ class SFcalculator(object):
             print("No Free Flag! Check your data!")
 
         # label outliers
-        exp_mtz.label_centrics(inplace=True)
-        exp_mtz.compute_multiplicity(inplace=True)
-        exp_mtz["SIGN"] = 0.0
-        for i in range(self.n_bins):
-            index_i = self.bins == i
-            exp_mtz.loc[index_i, "SIGN"] = np.mean(
-                exp_mtz[index_i]["FP"].to_numpy() ** 2
-                / exp_mtz[index_i]["EPSILON"].to_numpy()
-            )
-        exp_mtz["EP"] = exp_mtz["FP"] / np.sqrt(exp_mtz["EPSILON"] * exp_mtz["SIGN"])
-        self.Outlier = (
-            (exp_mtz["CENTRIC"] & (exp_mtz["EP"] > 4.89))
-            | ((~exp_mtz["CENTRIC"]) & (exp_mtz["EP"] > 3.72))
-        ).to_numpy(dtype=bool)
+        try:
+            exp_mtz.label_centrics(inplace=True)
+            exp_mtz.compute_multiplicity(inplace=True)
+            exp_mtz["SIGN"] = 0.0
+            for i in range(self.n_bins):
+                index_i = self.bins == i
+                exp_mtz.loc[index_i, "SIGN"] = np.mean(
+                    exp_mtz[index_i]["FP"].to_numpy() ** 2
+                    / exp_mtz[index_i]["EPSILON"].to_numpy()
+                )
+            exp_mtz["EP"] = exp_mtz["FP"] / np.sqrt(exp_mtz["EPSILON"].astype(float) * exp_mtz["SIGN"])
+            self.Outlier = (
+                (exp_mtz["CENTRIC"] & (exp_mtz["EP"] > 4.89))
+                | ((~exp_mtz["CENTRIC"]) & (exp_mtz["EP"] > 3.72))
+            ).to_numpy(dtype=bool)
+        except:
+            self.Outlier = np.zeros(len(self.Fo)).astype(bool)
+            print("No outlier detection, will use all reflections!")
+
 
     def assign_resolution_bins(
         self, bins=10, Nmin=100, return_labels=False, format_str=".2f"
