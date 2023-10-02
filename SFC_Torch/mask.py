@@ -21,8 +21,8 @@ def reciprocal_grid(Hp1_array, Fp1_tensor, gridsize, batchsize=None):
     Return:
     Reciprocal space unit cell grid, as a torch.complex64 tensor
     """
-    grid = torch.zeros(gridsize, device=try_gpu(), dtype=torch.complex64)
-    tuple_index = tuple(torch.tensor(Hp1_array.T, device=try_gpu(), dtype=int))  # type: ignore
+    grid = torch.zeros(gridsize, device=Fp1_tensor.device, dtype=torch.complex64)
+    tuple_index = tuple(torch.tensor(Hp1_array.T, device=Fp1_tensor.device, dtype=int))  # type: ignore
     if batchsize is not None:
         for i in range(batchsize):
             Fp1_tensor_i = Fp1_tensor[i]
@@ -38,7 +38,7 @@ def reciprocal_grid(Hp1_array, Fp1_tensor, gridsize, batchsize=None):
         return grid
 
 
-def rsgrid2realmask(rs_grid, solvent_percent=0.50, scale=50, Batch=False):
+def rsgrid2realmask(rs_grid, solvent_percent=0.50, exponent=50.0, Batch=False):
     """
     Convert reciprocal space grid to real space solvent mask grid, in a
     fully differentiable way with torch
@@ -51,12 +51,12 @@ def rsgrid2realmask(rs_grid, solvent_percent=0.50, scale=50, Batch=False):
     solvent_percent: 0 - 1 float
         The approximate volume percentage of solvent in the system, to generate the cutoff
 
-    scale: int/float
+    exponent: int/float
         The scale used in sigmoid function, to make the distribution binary
 
     Return:
     -------
-    tf.float32 tensor
+    torch.float32 tensor
     The solvent mask grid in real space, solvent voxels have value close to 1, while protein voxels have value close to 0.
     """
     real_grid = torch.real(torch.fft.fftn(rs_grid, dim=(-3, -2, -1)))
@@ -65,7 +65,7 @@ def rsgrid2realmask(rs_grid, solvent_percent=0.50, scale=50, Batch=False):
         CUTOFF = torch.quantile(real_grid_norm[0], solvent_percent)
     else:
         CUTOFF = torch.quantile(real_grid_norm, solvent_percent)
-    real_grid_mask = torch.sigmoid((CUTOFF - real_grid_norm) * 50)
+    real_grid_mask = torch.sigmoid((CUTOFF - real_grid_norm) * exponent)
     return real_grid_mask
 
 
@@ -88,7 +88,7 @@ def realmask2Fmask(real_grid_mask, H_array, batchsize=None):
     Solvent mask structural factor corresponding to the HKL list in H_array
     """
     Fmask_grid = torch.fft.ifftn(real_grid_mask, dim=(-3, -2, -1), norm="forward")
-    tuple_index = tuple(torch.tensor(H_array.T, device=try_gpu(), dtype=int))  # type: ignore
+    tuple_index = tuple(torch.tensor(H_array.T, device=Fmask_grid.device, dtype=int))  # type: ignore
     if batchsize is not None:
         Fmask = Fmask_grid[(slice(None), *tuple_index)]
     else:

@@ -474,9 +474,10 @@ class SFcalculator(object):
         self,
         solventpct=None,
         gridsize=None,
-        dmin_mask=6.0,
-        Return=False,
+        dmin_mask=5.0,
         dmin_nonzero=3.0,
+        exponent=10.0,
+        Return=False,
     ):
         """
         Calculate the structure factor of solvent mask in a differentiable way
@@ -519,7 +520,7 @@ class SFcalculator(object):
         )
         rs_grid = reciprocal_grid(Hp1_array, Fp1_tensor, gridsize)
         self.real_grid_mask = rsgrid2realmask(
-            rs_grid, solvent_percent=solventpct
+            rs_grid, solvent_percent=solventpct, exponent=exponent, 
         )  # type: ignore
         if not self.HKL_array is None:
             self.Fmask_HKL = realmask2Fmask(self.real_grid_mask, self.HKL_array)
@@ -686,6 +687,13 @@ class SFcalculator(object):
         if hasattr(self, "Fo"):
             self.kmasks, self.kisos = self._init_kmask_kiso(requires_grad=requires_grad)
             self.uanisos = self._init_uaniso(requires_grad=requires_grad)
+            Fmodel = self.calc_ftotal()
+            Fmodel_mag = torch.abs(Fmodel)
+            self.r_work, self.r_free = r_factor(
+                self.Fo[~self.Outlier],
+                Fmodel_mag[~self.Outlier],
+                self.free_flag[~self.Outlier],
+            )
         else:
             self._set_scales(requires_grad)
 
@@ -801,7 +809,7 @@ class SFcalculator(object):
         ls_lr=0.1,
         r_lr=0.1,
         initialize=True,
-        verbose=True,
+        verbose=False,
     ):
         self._get_scales_lbfgs_LS(ls_steps, ls_lr, verbose, initialize)
         self._get_scales_lbfgs_r(r_steps, r_lr, verbose, initialize=False)
@@ -1005,10 +1013,11 @@ class SFcalculator(object):
         self,
         solventpct=None,
         gridsize=None,
-        dmin_mask=6,
+        dmin_mask=5,
+        dmin_nonzero=3.0,
+        exponent=10.0,
         Return=False,
         PARTITION=100,
-        dmin_nonzero=3.0,
     ):
         """
         Should run after Calc_Fprotein_batch, calculate the solvent mask structure factors in batched manner
@@ -1058,7 +1067,7 @@ class SFcalculator(object):
                 Hp1_array, Fp1_tensor_batch[start:end], gridsize, end - start
             )
             real_grid_mask = rsgrid2realmask(
-                rs_grid, solvent_percent=solventpct, Batch=True
+                rs_grid, solvent_percent=solventpct, exponent=exponent, Batch=True
             )  # type: ignore
             Fmask_batch_j = realmask2Fmask(real_grid_mask, HKL_array, end - start)
             if j == 0:
