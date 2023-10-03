@@ -299,24 +299,39 @@ def fetch_pdb(idlist, outpath):
     mtz files will be saved at outpath/reflections/
     Record csv file will be saved at outpath/fetchpdb.csv
     '''
-    model_path = os.path.join(outpath, 'models/')
-    reflection_path = os.path.join(outpath, 'reflections/')
-    for folder in [model_path, reflection_path]:
-        if os.path.exists(folder):
-            print(f"{folder:<80}" + f"{'already exists': >20}")
-        else:
-            os.makedirs(folder)
-            print(f"{folder:<80}" + f"{'created': >20}")
+
+    if len(idlist) > 1:
+        sequence_path = os.path.join(outpath, 'sequences/')
+        model_path = os.path.join(outpath, 'models/')
+        reflection_path = os.path.join(outpath, 'reflections/')
+        for folder in [sequence_path, model_path, reflection_path]:
+            if os.path.exists(folder):
+                print(f"{folder:<80}" + f"{'already exists': >20}")
+            else:
+                os.makedirs(folder)
+                print(f"{folder:<80}" + f"{'created': >20}")
+    else:
+        sequence_path = outpath
+        model_path = outpath
+        reflection_path = outpath
     
     codes = []
+    with_sequence = []
     with_pdb = []
     with_mtz = []
     for pdb_code in tqdm(idlist):
         valid_code = pdb_code.lower()
-        
+        seqlink = "https://www.rcsb.org/fasta/entry/" + valid_code.upper()
         pdblink = "https://files.rcsb.org/download/" + valid_code.upper() + ".pdb"
         mtzlink = "https://edmaps.rcsb.org/coefficients/" + valid_code + ".mtz"
         codes.append(valid_code)
+
+        try:
+            urllib.request.urlretrieve(seqlink, os.path.join(sequence_path, valid_code+".fasta"))
+            with_sequence.append(1)
+        except:
+            with_sequence.append(0)
+
         try:
             urllib.request.urlretrieve(pdblink, os.path.join(model_path, valid_code+".pdb"))
             with_pdb.append(1)
@@ -330,6 +345,7 @@ def fetch_pdb(idlist, outpath):
     
     stat_df = pd.DataFrame({
         "code" : codes,
+        "with_sequence" : with_sequence,
         "with_pdb" : with_pdb,
         "with_mtz" : with_mtz
     })
