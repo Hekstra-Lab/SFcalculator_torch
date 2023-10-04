@@ -5,7 +5,7 @@ import urllib.request, os
 from tqdm import tqdm
 import pandas as pd
 
-from .utils import try_gpu
+from .utils import try_gpu, assert_numpy
 
 
 def hier2array(structure, as_tensor=False):
@@ -275,6 +275,12 @@ class PDBParser(object):
             new_parser = PDBParser(st, use_tensor=self.use_tensor)
             new_parser.pdb_header = self.pdb_header
             return new_parser
+        
+    def move2cell(self):
+        frac_mat = np.array(self.cell.fractionalization_matrix.tolist())
+        mean_positions_frac = np.dot(frac_mat, np.mean(assert_numpy(self.atom_pos), axis=0))
+        shift_vec = np.dot(np.linalg.inv(frac_mat), mean_positions_frac % 1.0 - mean_positions_frac)
+        self.set_positions(assert_numpy(self.atom_pos) + shift_vec)
 
     def savePDB(self, savefilename, include_header=True):
         structure = self.to_gemmi(include_header=include_header)
