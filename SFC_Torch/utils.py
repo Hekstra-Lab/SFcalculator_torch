@@ -107,7 +107,7 @@ def DWF_iso(b_iso, dr2_array):
     -------
     A 2D [N_atoms, N_HKLs] float32 tensor with DWF corresponding to different atoms and different HKLs
     """
-    dr2_tensor = torch.tensor(dr2_array, device=try_gpu())
+    dr2_tensor = torch.tensor(dr2_array).to(b_iso)
     return torch.exp(-b_iso.view([-1, 1]) * dr2_tensor / 4.0).type(torch.float32)
 
 
