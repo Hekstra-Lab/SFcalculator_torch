@@ -1254,7 +1254,7 @@ def F_protein_batch(
     # F_calc = sum_Gsum_j{ [f0_sj*DWF*exp(2*pi*i*(h,k,l)*(R_G*(x1,x2,x3)+T_G))]} fractional postion, Rupp's Book P279
     # G is symmetry operations of the spacegroup and j is the atoms
     # DWF is the Debye-Waller Factor, has isotropic and anisotropic version, based on the PDB file input, Rupp's Book P641
-    HKL_tensor = torch.tensor(HKL_array).to(fullsf_tensor)
+    HKL_tensor = torch.tensor(HKL_array).to(R_G_tensor_stack)
     batchsize = atom_pos_frac_batch.shape[0]
 
     oc_sf = fullsf_tensor * atom_occ[..., None]  # [N_atom, N_HKLs]
