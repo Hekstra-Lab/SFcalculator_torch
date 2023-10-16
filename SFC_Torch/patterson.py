@@ -132,12 +132,12 @@ def Patterson_torch(
     PARTITION: int, default 10000
         Size of partition for each vecotrized operation.
         Large partition size gives faster performance but more demanding to your memory.
-        60000 HKL with 10000 parition requires about 0.9GB memory on GPU.
+        24000 HKL with 10000 parition requires about 0.9GB memory on GPU.
     """
     N_uvw = len(uvw_arr)
     N_partition = N_uvw // PARTITION + 1
-    uvw_tensor = torch.tensor(uvw_arr, dtype=torch.float32, device=try_gpu())
-    HKL_tensor = torch.tensor(HKL_array, dtype=torch.float32, device=try_gpu())
+    uvw_tensor = torch.tensor(uvw_arr).to(Fh)
+    HKL_tensor = torch.tensor(HKL_array).to(Fh)
     Pu = 0.0
 
     if sharpen:
@@ -173,6 +173,7 @@ def Patterson_torch_batch(
     remove_origin=False,
     PARTITION_uvw=10000,
     PARTITION_batch=20,
+    no_grad=False
 ):
     """
     Similar to `Patterson_torch` but for a batch of Fh
@@ -186,7 +187,10 @@ def Patterson_torch_batch(
 
     PARTITION_batch: int, default 20
         Size of partition on the batched model.
-        60000 HKL with 10000 partition and 20 models requires about 17GB memory on GPU
+        24000 HKL with 10000 uvw partition and 20 models requires about 20GB memory on GPU
+    
+    no_grad: boolean, default False
+        Turn off auto grad for batch calculation, save memory cost
 
     """
     N_uvw = len(uvw_arr)
@@ -195,8 +199,8 @@ def Patterson_torch_batch(
     N_batch = Fh_batch.shape[0]
     N_partition_batch = N_batch // PARTITION_batch + 1
 
-    uvw_tensor = torch.tensor(uvw_arr, dtype=torch.float32, device=try_gpu())
-    HKL_tensor = torch.tensor(HKL_array, dtype=torch.float32, device=try_gpu())
+    uvw_tensor = torch.tensor(uvw_arr).to(Fh_batch)
+    HKL_tensor = torch.tensor(HKL_array).to(Fh_batch)
     Pu = 0.0
 
     if sharpen:
@@ -228,15 +232,23 @@ def Patterson_torch_batch(
             Pu_ij = P_uvw_torch_batch(
                 uvw_tensor[start_j:end_j], Fh2_i, HKL_tensor, volume
             )
+            if no_grad:
+                Pu_ij = Pu_ij.detach()
 
             if j == 0:
                 Pu_i = Pu_ij
+                del Pu_ij
             else:
                 Pu_i = torch.concat([Pu_i, Pu_ij], 1)
+                del Pu_ij
 
+        if no_grad:
+            Pu_i = Pu_i.detach()
         if i == 0:
             Pu = Pu_i
+            del Pu_i
         else:
             Pu = torch.concat([Pu, Pu_i], 0)
+            del Pu_i
 
     return Pu
