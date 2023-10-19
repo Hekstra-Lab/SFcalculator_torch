@@ -3,8 +3,6 @@ import torch
 import reciprocalspaceship as rs
 import pandas as pd
 
-from .utils import try_gpu
-
 ccp4_hkl_asu = [
     0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,  2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
     2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 3, 3, 3, 3,
@@ -87,19 +85,19 @@ def expand_to_p1(spacegroup, Hasu_array, Fasu_tensor, Batch=False, dmin_mask=6.0
 
     Fp1_tensor = Fasu_tensor
     len_asu = len(Hasu_array)
-    Hasu_tensor = torch.tensor(Hasu_array, device=try_gpu()).type(torch.float32)
+    Hasu_tensor = torch.tensor(Hasu_array, device=Fasu_tensor.device).type(torch.float32)
 
     ds = pd.DataFrame()
     ds["H"] = Hasu_array[:, 0]
     ds["K"] = Hasu_array[:, 1]
     ds["L"] = Hasu_array[:, 2]
     ds["index"] = np.arange(len_asu)
-    zero_tensor = torch.tensor(0.,device=try_gpu())
+    zero_tensor = torch.tensor(0.,device=Fasu_tensor.device)
     for i, op in enumerate(allops):
         if i == 0:
             continue
         rot_temp = np.array(op.rot)/op.DEN
-        tran_temp = torch.tensor(np.array(op.tran)/op.DEN, device=try_gpu()).type(torch.float32)
+        tran_temp = torch.tensor(np.array(op.tran)/op.DEN, device=Fasu_tensor.device).type(torch.float32)
         H_temp = np.matmul(Hasu_array, rot_temp).astype(np.int32)
         ds_temp = pd.DataFrame()
         ds_temp["H"] = H_temp[:, 0]
@@ -130,12 +128,12 @@ def expand_to_p1(spacegroup, Hasu_array, Fasu_tensor, Batch=False, dmin_mask=6.0
     ds = ds.drop_duplicates(subset=["H", "K", "L"])
 
     HKL_1 = ds[["H", "K", "L"]].values
-    idx_1 = torch.tensor(ds["index"].values, device=try_gpu())
+    idx_1 = torch.tensor(ds["index"].values, device=Fp1_tensor.device)
     Fp1_tensor = torch.index_select(Fp1_tensor, dim=concat_axis, index=idx_1)
     in_asu = asu_cases[0]  # p1 symmetry
     idx_2 = in_asu(*HKL_1.T)
     HKL_2 = HKL_1[idx_2]
-    idx_2i = torch.where(torch.tensor(idx_2, device=try_gpu()))[0]
+    idx_2i = torch.where(torch.tensor(idx_2, device=Fp1_tensor.device))[0]
     Fp1_tensor = torch.index_select(Fp1_tensor, dim=concat_axis, index=idx_2i)
 
     return HKL_2, Fp1_tensor
@@ -231,13 +229,13 @@ def asu2p1_torch(atom_pos_orth, unitcell, spacegroup,
     ------
     atom_pos_sym_oped, [N_atoms, N_ops, 3] tensor in either fractional or orthogonal coordinates
     '''
-    orth2frac_tensor = torch.tensor(unitcell.fractionalization_matrix.tolist(), device=try_gpu())
-    frac2orth_tensor = torch.tensor(unitcell.orthogonalization_matrix.tolist(), device=try_gpu())
+    orth2frac_tensor = torch.tensor(unitcell.fractionalization_matrix.tolist(), device=atom_pos_orth.device, dtype=torch.float32)
+    frac2orth_tensor = torch.tensor(unitcell.orthogonalization_matrix.tolist(), device=atom_pos_orth.device, dtype=torch.float32)
     operations = spacegroup.operations()  # gemmi.GroupOps object
     R_G_tensor_stack = torch.tensor(np.array([
-            np.array(sym_op.rot)/sym_op.DEN for sym_op in operations]), device=try_gpu()).type(torch.float32)
+            np.array(sym_op.rot)/sym_op.DEN for sym_op in operations]), device=atom_pos_orth.device).type(torch.float32)
     T_G_tensor_stack = torch.tensor(np.array([
-            np.array(sym_op.tran)/sym_op.DEN for sym_op in operations]), device=try_gpu()).type(torch.float32)
+            np.array(sym_op.tran)/sym_op.DEN for sym_op in operations]), device=atom_pos_orth.device).type(torch.float32)
     atom_pos_frac = torch.tensordot(atom_pos_orth, orth2frac_tensor.T, 1)
     sym_oped_pos_frac = torch.permute(torch.tensordot(R_G_tensor_stack,
         atom_pos_frac.T, 1), [2, 0, 1]) + T_G_tensor_stack

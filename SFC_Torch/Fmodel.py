@@ -42,6 +42,7 @@ class SFcalculator(object):
         expcolumns=["FP", "SIGFP"],
         freeflag="FreeR_flag",
         testset_value=0,
+        device=try_gpu()
     ):
         """
         Initialize with necessary reusable information, like spacegroup, unit cell info, HKL_list, et.c.
@@ -58,18 +59,26 @@ class SFcalculator(object):
         dmin: float, default None
             highest resolution in the map in Angstrom, to generate Miller indices in recirpocal ASU
 
-        anomalous: Boolean, default False
+        anomalous: boolean, default False
             Whether or not to include anomalous scattering in the calculation
 
         wavelength: None or float
             The wavelength of scattering source in A
 
-        set_experiment: Boolean, default True
+        set_experiment: boolean, default True
             Whether or not to set Fo, SigF, free_flag and Outlier from the experimental mtz file. It only works when
             the mtzfile_dir is not None
 
         expcolumns: list of str, default ['FP', 'SIGFP']
             list of column names used as expeimental data
+
+        freeflag: str, default "FreeR_flag"
+            column names used as free flag, default "FreeR_flag". Also could be "FREE" and "R-free-flags" 
+            in Phenix(CNS/XPOLAR) convention
+        
+        testset_value: int, default 0
+
+        device: torch.device
         """
         structure = gemmi.read_pdb(PDBfile_dir)  # gemmi.Structure object
         self.unit_cell = structure.cell  # gemmi.UnitCell object
@@ -79,6 +88,7 @@ class SFcalculator(object):
         self.operations = self.space_group.operations()  # gemmi.GroupOps object
         self.wavelength = wavelength
         self.anomalous = anomalous
+        self.device = device
 
         if anomalous:
             # Try to get the wavelength from PDB remarks
@@ -100,13 +110,13 @@ class SFcalculator(object):
 
         self.R_G_tensor_stack = torch.tensor(
             np.array([np.array(sym_op.rot) / sym_op.DEN for sym_op in self.operations]),
-            device=try_gpu(),
+            device=self.device,
         ).type(torch.float32)
         self.T_G_tensor_stack = torch.tensor(
             np.array(
                 [np.array(sym_op.tran) / sym_op.DEN for sym_op in self.operations]
             ),
-            device=try_gpu(),
+            device=self.device,
         ).type(torch.float32)
 
         # Generate ASU HKL array and Corresponding d*^2 array
@@ -171,10 +181,10 @@ class SFcalculator(object):
                 self.assign_resolution_bins()
 
         self.orth2frac_tensor = torch.tensor(
-            self.unit_cell.fractionalization_matrix.tolist(), device=try_gpu()
+            self.unit_cell.fractionalization_matrix.tolist(), device=self.device
         ).type(torch.float32)
         self.frac2orth_tensor = torch.tensor(
-            self.unit_cell.orthogonalization_matrix.tolist(), device=try_gpu()
+            self.unit_cell.orthogonalization_matrix.tolist(), device=self.device
         ).type(torch.float32)
 
         self.reciprocal_cell = self.unit_cell.reciprocal()  # gemmi.UnitCell object
@@ -188,7 +198,7 @@ class SFcalculator(object):
                 np.cos(np.deg2rad(self.reciprocal_cell.beta)),
                 np.cos(np.deg2rad(self.reciprocal_cell.gamma)),
             ],
-            device=try_gpu(),
+            device=self.device,
         ).type(torch.float32)
 
         self.atom_name = []
@@ -214,20 +224,20 @@ class SFcalculator(object):
             # A list of occupancy [P1,P2,....], [Nc]
             self.atom_occ.append(cra.atom.occ)
 
-        self.atom_pos_orth = torch.tensor(self.atom_pos_orth, device=try_gpu()).type(
+        self.atom_pos_orth = torch.tensor(self.atom_pos_orth, device=self.device).type(
             torch.float32
         )
-        self.atom_pos_frac = torch.tensor(self.atom_pos_frac, device=try_gpu()).type(
+        self.atom_pos_frac = torch.tensor(self.atom_pos_frac, device=self.device).type(
             torch.float32
         )
-        self.atom_aniso_uw = torch.tensor(self.atom_aniso_uw, device=try_gpu()).type(
+        self.atom_aniso_uw = torch.tensor(self.atom_aniso_uw, device=self.device).type(
             torch.float32
         )
 
-        self.atom_b_iso = torch.tensor(self.atom_b_iso, device=try_gpu()).type(
+        self.atom_b_iso = torch.tensor(self.atom_b_iso, device=self.device).type(
             torch.float32
         )
-        self.atom_occ = torch.tensor(self.atom_occ, device=try_gpu()).type(
+        self.atom_occ = torch.tensor(self.atom_occ, device=self.device).type(
             torch.float32
         )
         self.n_atoms = len(self.atom_name)
@@ -257,12 +267,12 @@ class SFcalculator(object):
         if anomalous:
             self.fullsf_tensor = torch.tensor(
                 np.array([self.full_atomic_sf_asu[atom] for atom in self.atom_name]),
-                device=try_gpu(),
+                device=self.device,
             ).type(torch.complex64)
         else:
             self.fullsf_tensor = torch.tensor(
                 np.array([self.full_atomic_sf_asu[atom] for atom in self.atom_name]),
-                device=try_gpu(),
+                device=self.device,
             ).type(torch.float32)
         self.inspected = False
 
@@ -274,11 +284,11 @@ class SFcalculator(object):
         exp_mtz, rs.Dataset, mtzfile read by reciprocalspaceship
         """
         try:
-            self.Fo = torch.tensor(exp_mtz[expcolumns[0]].to_numpy(), device=try_gpu()).type(
+            self.Fo = torch.tensor(exp_mtz[expcolumns[0]].to_numpy(), device=self.device).type(
                 torch.float32
             )
             self.SigF = torch.tensor(
-                exp_mtz[expcolumns[1]].to_numpy(), device=try_gpu()
+                exp_mtz[expcolumns[1]].to_numpy(), device=self.device
             ).type(torch.float32)
         except:
             print(f"MTZ file doesn't contain {expcolumns[0]} or {expcolumns[1]}! Check your data!")
@@ -524,17 +534,17 @@ class SFcalculator(object):
         )  # type: ignore
         if not self.HKL_array is None:
             self.Fmask_HKL = realmask2Fmask(self.real_grid_mask, self.HKL_array)
-            zero_hkl_bool = torch.tensor(self.dHKL <= dmin_nonzero, device=try_gpu())
+            zero_hkl_bool = torch.tensor(self.dHKL <= dmin_nonzero, device=self.device)
             self.Fmask_HKL[zero_hkl_bool] = torch.tensor(
-                0.0, device=try_gpu(), dtype=torch.complex64
+                0.0, device=self.device, dtype=torch.complex64
             )
             if Return:
                 return self.Fmask_HKL
         else:
             self.Fmask_asu = realmask2Fmask(self.real_grid_mask, self.Hasu_array)
-            zero_hkl_bool = torch.tensor(self.dHasu <= dmin_nonzero, device=try_gpu())
+            zero_hkl_bool = torch.tensor(self.dHasu <= dmin_nonzero, device=self.device)
             self.Fmask_asu[zero_hkl_bool] = torch.tensor(
-                0.0, device=try_gpu(), dtype=torch.complex64
+                0.0, device=self.device, dtype=torch.complex64
             )
             if Return:
                 return self.Fmask_asu
@@ -1018,16 +1028,16 @@ class SFcalculator(object):
         dmin_nonzero=3.0,
         exponent=10.0,
         Return=False,
-        PARTITION=100,
+        PARTITION=10,
     ):
         """
         Should run after Calc_Fprotein_batch, calculate the solvent mask structure factors in batched manner
         most parameters are similar to `Calc_Fmask`
 
-        PARTITION: Int, default 100
+        PARTITION: Int, default 10
             To reduce the memory cost during the computation, we divide the batch into several partitions and loops through them.
-            Larger PARTITION will require larger GPU memory. Default 100 will take around 15GB, if gridsize=[160,160,160].
-            But larger PARTITION will give a smaller wall time, so this is a trade-off.
+            Larger PARTITION will require larger GPU memory. Default 10 will take around 2GB, if gridsize=[160,160,160].
+            Larger PARTITION does not mean smaller wall time, the optimal size is around 10
         """
 
         if solventpct is None:
@@ -1080,17 +1090,17 @@ class SFcalculator(object):
                 )  # type: ignore
 
         if not self.HKL_array is None:
-            zero_hkl_bool = torch.tensor(self.dHKL <= dmin_nonzero, device=try_gpu())
+            zero_hkl_bool = torch.tensor(self.dHKL <= dmin_nonzero, device=self.device)
             Fmask_batch[:, zero_hkl_bool] = torch.tensor(
-                0.0, device=try_gpu(), dtype=torch.complex64
+                0.0, device=self.device, dtype=torch.complex64
             )  # type: ignore
             self.Fmask_HKL_batch = Fmask_batch
             if Return:
                 return self.Fmask_HKL_batch
         else:
-            zero_hkl_bool = torch.tensor(self.dHasu <= dmin_nonzero, device=try_gpu())
+            zero_hkl_bool = torch.tensor(self.dHasu <= dmin_nonzero, device=self.device)
             Fmask_batch[:, zero_hkl_bool] = torch.tensor(
-                0.0, device=try_gpu(), dtype=torch.complex64
+                0.0, device=self.device, dtype=torch.complex64
             )  # type: ignore
             self.Fmask_asu_batch = Fmask_batch
             if Return:
@@ -1198,7 +1208,7 @@ def F_protein(
     # F_calc = sum_Gsum_j{ [f0_sj*DWF*exp(2*pi*i*(h,k,l)*(R_G*(x1,x2,x3)+T_G))]} fractional postion, Rupp's Book P279
     # G is symmetry operations of the spacegroup and j is the atoms
     # DWF is the Debye-Waller Factor, has isotropic and anisotropic version, based on the PDB file input, Rupp's Book P641
-    HKL_tensor = torch.tensor(HKL_array, dtype=torch.float32, device=try_gpu())
+    HKL_tensor = torch.tensor(HKL_array, dtype=torch.float32, device=fullsf_tensor.device)
 
     oc_sf = fullsf_tensor * atom_occ[..., None]  # [N_atom, N_HKLs]
     # DWF calculator

@@ -1,5 +1,4 @@
 import torch
-from .utils import try_gpu
 
 
 def reciprocal_grid(Hp1_array, Fp1_tensor, gridsize, batchsize=None):

@@ -1,8 +1,6 @@
 import torch
 import numpy as np
 
-from .utils import try_gpu
-
 
 def uvw_array_orth(dmin, dmax, step=0.3):
     """

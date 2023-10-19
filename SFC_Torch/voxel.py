@@ -1,7 +1,6 @@
 import torch
 import numpy as np
 
-from .utils import try_gpu
 from .symmetry import asu2p1_torch
 
 
@@ -133,7 +132,7 @@ def voxelvalue_torch_p1_savememory(
         atom_pos_orth, unit_cell, space_group, incell=True, fractional=False
     )
     N_ops = len(sym_oped_atom_pos_orth_incell[0])
-    voxel_map = torch.zeros([len(unitcell_grid_center_orth)], device=try_gpu())
+    voxel_map = torch.zeros([len(unitcell_grid_center_orth)], device=atom_pos_orth.device)
     for i in range(N_ops):
         model_i = sym_oped_atom_pos_orth_incell[:, i, :]
         voxel2atom_dist = torch.sqrt(
