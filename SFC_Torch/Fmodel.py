@@ -2,7 +2,7 @@
 Calculate Structural Factor from an atomic model: F_model = k_total * (F_calc + k_mask * F_mask)
 
 Note:
-1. We use direct summation for the F_calc
+1. We use direct summation for the F_calc, with differentiable solvent mask
 2. We support anomalous scattering with cromer_liberman equation
 3. We use a bulk solvent masking 
 
@@ -49,7 +49,7 @@ class SFcalculator(object):
 
         Parameters:
         -----------
-        model_dir: path, str
+        PDBfile_dir: path, str
             path to the PDB model file, will use its unit cell info, space group info, atom name info,
             atom position info, atoms B-factor info and atoms occupancy info to initialize the instance.
 
