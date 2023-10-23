@@ -372,9 +372,9 @@ class SFcalculator(object):
         2. suitable grid size
         """
         # solvent percentage
-        vdw_rad = vdw_rad_tensor(self.atom_name)
+        vdw_rad = vdw_rad_tensor(self.atom_name, device=self.device)
         uc_grid_orth_tensor = unitcell_grid_center(
-            self.unit_cell, spacing=4.5, return_tensor=True
+            self.unit_cell, spacing=4.5, return_tensor=True, device=self.device
         )
         occupancy, _ = packingscore_voxelgrid_torch(
             self.atom_pos_orth,
