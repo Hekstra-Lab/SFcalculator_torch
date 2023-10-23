@@ -19,6 +19,7 @@ setup(name="SFcalculator_torch",
     include_package_data=True,
     python_requires=">=3.8",
     install_requires=[
+        "torch>=1.13.0",
         "gemmi>=0.5.6",
         "reciprocalspaceship>=0.9.18",
         "tqdm",
