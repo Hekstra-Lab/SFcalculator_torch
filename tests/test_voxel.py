@@ -13,7 +13,7 @@ from SFC_Torch.voxel import voxel_1dto3d_np, voxel_1dto3d_torch
 @pytest.mark.parametrize("binary", [True, False])
 def test_voxelvalue_torch_p1_sm(data_pdb, data_mtz_exp, binary):
     sfcalculator = SFcalculator(
-        data_pdb, mtzfile_dir=data_mtz_exp, set_experiment=True)
+        data_pdb, mtzdata=data_mtz_exp, set_experiment=True)
     vdw_rad = vdw_rad_tensor(sfcalculator.atom_name)
     uc_grid_orth_tensor = unitcell_grid_center(sfcalculator.unit_cell,
                                                spacing=4.5, return_tensor=True)
@@ -41,7 +41,7 @@ def test_voxelvalue_torch_p1_sm(data_pdb, data_mtz_exp, binary):
 
 def test_voxel_1dto3d(data_pdb, data_mtz_exp):
     sfcalculator = SFcalculator(
-        data_pdb, mtzfile_dir=data_mtz_exp, set_experiment=True)
+        data_pdb, mtzdata=data_mtz_exp, set_experiment=True)
     vdw_rad = vdw_rad_tensor(sfcalculator.atom_name)
     uc_grid_orth_tensor = unitcell_grid_center(sfcalculator.unit_cell,
                                                spacing=4.5, return_tensor=True)

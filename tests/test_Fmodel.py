@@ -5,6 +5,7 @@ import reciprocalspaceship as rs
 import torch
 
 from scipy.stats import pearsonr
+from SFC_Torch.io import PDBParser
 from SFC_Torch.Fmodel import SFcalculator
 from SFC_Torch.utils import assert_numpy
 
@@ -13,7 +14,7 @@ from SFC_Torch.utils import assert_numpy
 def test_constructor_SFcalculator(data_pdb, data_mtz_exp, case):
     if case == 1:
         sfcalculator = SFcalculator(
-            data_pdb, mtzfile_dir=data_mtz_exp, set_experiment=True)
+            data_pdb, mtzdata=data_mtz_exp, set_experiment=True)
         sfcalculator.inspect_data()
         bins_labels = sfcalculator.assign_resolution_bins(return_labels=True)
         assert sfcalculator.inspected
@@ -26,7 +27,7 @@ def test_constructor_SFcalculator(data_pdb, data_mtz_exp, case):
         assert len(bins_labels) == 10
     else:
         sfcalculator = SFcalculator(
-            data_pdb, mtzfile_dir=None, dmin=2.5, set_experiment=True)
+            data_pdb, mtzdata=None, dmin=2.5, set_experiment=True)
         sfcalculator.inspect_data()
         assert sfcalculator.inspected
         assert np.isclose(assert_numpy(sfcalculator.solventpct), 0.1667, 1e-3)
@@ -36,11 +37,27 @@ def test_constructor_SFcalculator(data_pdb, data_mtz_exp, case):
     assert len(sfcalculator.atom_name) == 488
 
 
+def test_constructor_SFcalculator_obj(data_pdb, data_mtz_exp):
+    pdbmodel = PDBParser(data_pdb)
+    mtzdata = rs.read_mtz(data_mtz_exp)
+    sfcalculator = SFcalculator(
+        pdbmodel, mtzdata=mtzdata, set_experiment=True)
+    sfcalculator.inspect_data()
+    bins_labels = sfcalculator.assign_resolution_bins(return_labels=True)
+    assert sfcalculator.inspected
+    assert np.isclose(assert_numpy(sfcalculator.solventpct), 0.1667, 1e-3)
+    assert sfcalculator.gridsize == [48, 60, 60]
+    assert len(sfcalculator.HKL_array) == 3197
+    assert len(sfcalculator.Hasu_array) == 3255
+    assert len(sfcalculator.bins) == 3197
+    assert np.all(np.sort(np.unique(sfcalculator.bins)) == np.arange(0,10))
+    assert len(bins_labels) == 10
+
 @pytest.mark.parametrize("Return", [True, False])
 @pytest.mark.parametrize("Anomalous", [True, False])
 def test_calc_fall(data_pdb, data_mtz_exp, data_mtz_fmodel_ksol0, data_mtz_fmodel_ksol1, Return, Anomalous):
     sfcalculator = SFcalculator(
-        data_pdb, mtzfile_dir=data_mtz_exp, set_experiment=True, anomalous=Anomalous)
+        data_pdb, mtzdata=data_mtz_exp, set_experiment=True, anomalous=Anomalous)
     sfcalculator.inspect_data()
     Fprotein = sfcalculator.calc_fprotein(Return=Return)
     Fsolvent = sfcalculator.calc_fsolvent(
@@ -99,7 +116,7 @@ def test_calc_fall(data_pdb, data_mtz_exp, data_mtz_fmodel_ksol0, data_mtz_fmode
 
 def test_calc_ftotal_nodata(data_pdb):
     sfcalculator = SFcalculator(
-        data_pdb, mtzfile_dir=None, dmin=2.5, set_experiment=False)
+        data_pdb, mtzdata=None, dmin=2.5, set_experiment=False)
     sfcalculator.inspect_data()
     sfcalculator.calc_fprotein(Return=False)
     sfcalculator.calc_fsolvent(
@@ -113,7 +130,7 @@ def test_calc_ftotal_nodata(data_pdb):
 @pytest.mark.parametrize("Anomalous", [True, False])
 def test_calc_fall_batch(data_pdb, data_mtz_exp, Anomalous, partition_size):
     sfcalculator = SFcalculator(
-        data_pdb, mtzfile_dir=data_mtz_exp, set_experiment=True, anomalous=Anomalous)
+        data_pdb, mtzdata=data_mtz_exp, set_experiment=True, anomalous=Anomalous)
     sfcalculator.inspect_data()
     atoms_pos_batch = torch.tile(sfcalculator.atom_pos_orth, [5, 1, 1])
 
@@ -149,7 +166,7 @@ def test_calc_fall_batch(data_pdb, data_mtz_exp, Anomalous, partition_size):
 
 def test_prepare_dataset(data_pdb, data_mtz_exp):
     sfcalculator = SFcalculator(
-        data_pdb, mtzfile_dir=data_mtz_exp, set_experiment=True)
+        data_pdb, mtzdata=data_mtz_exp, set_experiment=True)
     sfcalculator.inspect_data()
     sfcalculator.calc_fprotein(Return=False)
     sfcalculator.calc_fsolvent(

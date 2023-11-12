@@ -41,8 +41,8 @@ def hier2array(structure, as_tensor=False):
                 )
                 # A list of atom's Positions in orthogonal space, [Nc,3]
                 atom_pos.append(atom.pos.tolist())
-                # A list of anisotropic B Factor [[U11,U22,U33,U12,U13,U23],..], [Nc,6]
-                atom_b_aniso.append(atom.aniso.elements_pdb())
+                # A list of anisotropic B Factor matrix, [Nc,3,3]
+                atom_b_aniso.append(atom.aniso.as_mat33().tolist())
                 # A list of isotropic B Factor [B1,B2,...], [Nc]
                 atom_b_iso.append(atom.b_iso)
                 # A list of occupancy [P1,P2,....], [Nc]
@@ -87,7 +87,8 @@ def array2hier(
         current_atom = gemmi.Atom()
         current_atom.name = atomname_i
         current_atom.element = gemmi.Element(atom_name[i])
-        current_atom.aniso = gemmi.SMat33f(*atom_b_aniso[i])
+        Ui = atom_b_aniso[i]
+        current_atom.aniso = gemmi.SMat33f(*[Ui[0,0], Ui[1,1], Ui[2,2], Ui[0,1], Ui[0,2], Ui[1,2]])
         current_atom.b_iso = atom_b_iso[i]
         current_atom.pos = gemmi.Position(*atom_pos[i])
         current_atom.occ = atom_occ[i]
@@ -205,10 +206,10 @@ class PDBParser(object):
         """
         Set the Anisotropic B-factors with an array
 
-        baniso: array-like, [Nc,6]
+        baniso: array-like, [Nc,3,3]
         """
         assert len(baniso) == len(self.atom_b_aniso), "Different atom number!"
-        assert len(baniso[0]) == 6, "Provide 6 baniso parameters per atom!"
+        assert baniso[0].shape == (3,3), "Provide a 3*3 matrix per atom!"
         self.atom_b_aniso = baniso
 
     def set_occ(self, occ):

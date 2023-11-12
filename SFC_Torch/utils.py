@@ -11,6 +11,7 @@ __all__ = [
     "vdw_rad_tensor",
     "nonH_index",
     "assert_numpy",
+    "assert_tensor",
     "bin_by_logarithmic",
     "aniso_scaling",
 ]
@@ -40,6 +41,18 @@ def assert_numpy(x, arr_type=None):
     assert isinstance(x, np.ndarray)
     if arr_type is not None:
         x = x.astype(arr_type)
+    return x
+
+
+def assert_tensor(x, arr_type=None, device=try_gpu()):
+    if isinstance(x, np.ndarray):
+        x = torch.tensor(x, device=device)
+    if is_list_or_tuple(x):
+        x = np.array(x)
+        x = torch.tensor(x, device=device)
+    assert isinstance(x, torch.Tensor)
+    if arr_type is not None:
+        x = x.to(arr_type)
     return x
 
 

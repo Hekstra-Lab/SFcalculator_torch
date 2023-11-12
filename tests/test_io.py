@@ -25,10 +25,10 @@ def test_setdata(data_pdb):
 
     # test set_baniso
     new_baniso = a.atom_b_aniso.copy()
-    new_baniso[10, 3] = 7.88
+    new_baniso[10, 1, 2] = 7.88
     a.set_baniso(new_baniso)
-    assert a.atom_b_aniso[10, 3] == 7.88
-
+    assert a.atom_b_aniso[10, 1, 2] == 7.88
+    
     # test set_occ
     new_occ = a.atom_occ.copy()
     new_occ[10] = 7.88
