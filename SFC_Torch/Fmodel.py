@@ -1,3 +1,4 @@
+
 """
 Calculate Structural Factor from an atomic model: F_model = k_total * (F_calc + k_mask * F_mask)
 
@@ -8,12 +9,12 @@ Note:
 
 Written in PyTorch
 """
+from __future__ import annotations
 
 __author__ = "Minhuan Li"
 __email__ = "minhuanli@g.harvard.edu"
 
 from typing import Optional, List
-
 import gemmi
 import time
 import numpy as np
@@ -40,13 +41,13 @@ class SFcalculator(object):
         mtzdata:        str | rs.DataSet = None,
         n_bins:         int = 10, 
         dmin:           Optional[float] = None,
-        anomalous:      bool=False,
-        wavelength:     Optional[float]=None,
-        set_experiment: bool=True,
-        expcolumns:     List[str]=["FP", "SIGFP"],
-        freeflag:       str="FreeR_flag",
-        testset_value:  int=0,
-        device:         torch.device=try_gpu()
+        anomalous:      bool = False,
+        wavelength:     Optional[float] = None,
+        set_experiment: bool = True,
+        expcolumns:     List[str] = ["FP", "SIGFP"],
+        freeflag:       str = "FreeR_flag",
+        testset_value:  int = 0,
+        device:         torch.device = try_gpu()
     ) -> None:
         """
         Initialize with necessary reusable information, like spacegroup, unit cell info, HKL_list, et.c.
