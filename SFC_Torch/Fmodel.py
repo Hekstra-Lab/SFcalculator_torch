@@ -11,9 +11,6 @@ Written in PyTorch
 """
 from __future__ import annotations
 
-__author__ = "Minhuan Li"
-__email__ = "minhuanli@g.harvard.edu"
-
 from typing import Optional, List
 import gemmi
 import time
