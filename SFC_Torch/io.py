@@ -8,7 +8,7 @@ import pandas as pd
 from .utils import try_gpu, assert_numpy
 
 
-def hier2array(structure, as_tensor=False):
+def hier2array(structure):
     """
     Convert the hierachical gemmi.structure into arrays of info
 
@@ -50,16 +50,10 @@ def hier2array(structure, as_tensor=False):
                 # A list of residue id
                 res_id.append(res.seqid.num)
             j += 1
-    if as_tensor:
-        atom_pos = torch.tensor(atom_pos, dtype=torch.float32, device=try_gpu())
-        atom_b_aniso = torch.tensor(atom_b_aniso, dtype=torch.float32, device=try_gpu())
-        atom_b_iso = torch.tensor(atom_b_iso, dtype=torch.float32, device=try_gpu())
-        atom_occ = torch.tensor(atom_occ, dtype=torch.float32, device=try_gpu())
-    else:
-        atom_pos = np.array(atom_pos)
-        atom_b_aniso = np.array(atom_b_aniso)
-        atom_b_iso = np.array(atom_b_iso)
-        atom_occ = np.array(atom_occ)
+    atom_pos = np.array(atom_pos)
+    atom_b_aniso = np.array(atom_b_aniso)
+    atom_b_iso = np.array(atom_b_iso)
+    atom_occ = np.array(atom_occ)
     return atom_pos, atom_b_aniso, atom_b_iso, atom_occ, atom_name, cra_name, res_id
 
 
@@ -109,7 +103,7 @@ class PDBParser(object):
     Suppport indexing and gemmi-syntax structure selection
     """
 
-    def __init__(self, data, use_tensor=False):
+    def __init__(self, data):
         """
         Create an PDBparser object from pbdfile
 
@@ -123,7 +117,6 @@ class PDBParser(object):
             raise KeyError(
                 "data should be path str to a pdb file or a gemmi.Structure object"
             )
-        self.use_tensor = use_tensor
         (
             self.atom_pos,
             self.atom_b_aniso,
@@ -132,7 +125,7 @@ class PDBParser(object):
             self.atom_name,
             self.cra_name,
             self.res_id,
-        ) = hier2array(structure, self.use_tensor)
+        ) = hier2array(structure)
         self.spacegroup = gemmi.SpaceGroup(structure.spacegroup_hm)
         self.cell = structure.cell
 
@@ -241,9 +234,9 @@ class PDBParser(object):
                 self.atom_name,
                 self.cra_name,
                 self.res_id,
-            ) = hier2array(sele_st, self.use_tensor)
+            ) = hier2array(sele_st)
         else:
-            new_parser = PDBParser(sele_st, use_tensor=self.use_tensor)
+            new_parser = PDBParser(sele_st)
             new_parser.pdb_header = self.pdb_header
             return new_parser
 
@@ -273,7 +266,7 @@ class PDBParser(object):
             )
             st.spacegroup_hm = self.spacegroup.hm
             st.cell = self.cell
-            new_parser = PDBParser(st, use_tensor=self.use_tensor)
+            new_parser = PDBParser(st)
             new_parser.pdb_header = self.pdb_header
             return new_parser
         

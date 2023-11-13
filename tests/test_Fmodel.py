@@ -7,7 +7,7 @@ import torch
 from scipy.stats import pearsonr
 from SFC_Torch.io import PDBParser
 from SFC_Torch.Fmodel import SFcalculator
-from SFC_Torch.utils import assert_numpy
+from SFC_Torch.utils import assert_numpy, assert_tensor
 
 
 @pytest.mark.parametrize("case", [1, 2])
@@ -113,6 +113,27 @@ def test_calc_fall(data_pdb, data_mtz_exp, data_mtz_fmodel_ksol0, data_mtz_fmode
             assert pearsonr(np.abs(Fsolvent_arr),
                             np.abs(Fmask_complex))[0] > 0.84
 
+def test_calc_fall_setter(data_pdb, data_mtz_exp, Return=True):
+    sfcalculator = SFcalculator(
+        data_pdb, mtzdata=data_mtz_exp, set_experiment=True)
+    pdbmodel = PDBParser(data_pdb)
+    sfcalculator.inspect_data()
+    Fprotein = sfcalculator.calc_fprotein(
+        atoms_position_tensor=assert_tensor(pdbmodel.atom_pos, arr_type=torch.float32),
+        atoms_biso_tensor=assert_tensor(pdbmodel.atom_b_iso, arr_type=torch.float32),
+        atoms_aniso_uw_tensor=assert_tensor(pdbmodel.atom_b_aniso, arr_type=torch.float32),
+        atoms_occ_tensor=assert_tensor(pdbmodel.atom_occ, arr_type=torch.float32),
+        Return=Return
+    )
+    Fsolvent = sfcalculator.calc_fsolvent(
+        dmin_mask=6.0, dmin_nonzero=3.0, Return=Return
+    )
+    sfcalculator.get_scales_lbfgs(ls_steps=2, r_steps=2, ls_lr=0.00001, r_lr=0.00001, verbose=False)
+    Ftotal = sfcalculator.calc_ftotal()
+    assert len(Ftotal) == 3197
+    assert assert_numpy(sfcalculator.r_free) < 0.15
+    sfcalculator.get_scales_adam(lr=0.01, n_steps=20, sub_ratio=0.3, initialize=True, verbose=False)
+    assert assert_numpy(sfcalculator.r_free) < 0.15
 
 def test_calc_ftotal_nodata(data_pdb):
     sfcalculator = SFcalculator(

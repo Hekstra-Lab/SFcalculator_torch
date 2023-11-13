@@ -89,16 +89,16 @@ class SFcalculator(object):
         self.wavelength = wavelength
         self.anomalous = anomalous
         self.device = device
-        self.set_pdb(pdbmodel)
+        self.init_pdb(pdbmodel)
         # Generate ASU HKL array and Corresponding d*^2 array
         if mtzdata is not None:
-            self.set_mtz(mtzdata, n_bins, expcolumns, set_experiment, freeflag, testset_value)
+            self.init_mtz(mtzdata, n_bins, expcolumns, set_experiment, freeflag, testset_value)
         else:
-            self.set_withoutmtz(dmin, n_bins)
-        self._set_atomic_scattering()
+            self.init_withoutmtz(dmin, n_bins)
+        self.init_atomic_scattering()
         self.inspected = False
 
-    def set_pdb(self, pdbmodel: str | PDBParser):
+    def init_pdb(self, pdbmodel: str | PDBParser):
         """
         set pdb topology, symmetry operations, unit_cell properties, and initialize model coordinates
         """
@@ -149,16 +149,13 @@ class SFcalculator(object):
 
         # set molecule related property
         # Tensor atom's Positions in orthogonal space, [Nc,3]
-        self.atom_pos_orth = assert_tensor(self._pdb.atom_pos, device=self.device, arr_type=torch.float32)
+        self._atom_pos_orth = assert_tensor(self._pdb.atom_pos, device=self.device, arr_type=torch.float32)
         # Tensor of anisotropic B Factor in matrix form, [Nc,3,3]
-        self.atom_aniso_uw = assert_tensor(self._pdb.atom_b_aniso, device=self.device, arr_type=torch.float32)
+        self._atom_aniso_uw = assert_tensor(self._pdb.atom_b_aniso, device=self.device, arr_type=torch.float32)
         # Tensor of isotropic B Factor [B1,B2,...], [Nc]
-        self.atom_b_iso = assert_tensor(self._pdb.atom_b_iso, device=self.device, arr_type=torch.float32)
+        self._atom_b_iso = assert_tensor(self._pdb.atom_b_iso, device=self.device, arr_type=torch.float32)
         # Tensor of occupancy [P1,P2,....], [Nc]
-        self.atom_occ = assert_tensor(self._pdb.atom_occ, device=self.device, arr_type=torch.float32)
-        
-        self.n_atoms = len(self.atom_name)
-        self.unique_atom = list(set(self.atom_name))
+        self._atom_occ = assert_tensor(self._pdb.atom_occ, device=self.device, arr_type=torch.float32)
 
         if self.anomalous:
             # Try to get the wavelength from PDB remarks
@@ -177,7 +174,46 @@ class SFcalculator(object):
                 print(
                     "Can't find wavelength record in the PDB file, or it doesn't match your input wavelength!"
                 )
+    @property
+    def atom_pos_orth(self):
+        return self._atom_pos_orth
     
+    @atom_pos_orth.setter
+    def atom_pos_orth(self, atoms_positions_tensor: torch.Tensor):
+        assert (
+            atoms_positions_tensor.shape == torch.Size([self.n_atoms, 3])
+        ), f"atoms_postions_tensor should be in shape [{self.n_atoms}, 3]!"
+        self._atom_pos_orth = atoms_positions_tensor
+    
+    @property
+    def atom_b_iso(self):
+        return self._atom_b_iso
+    
+    @atom_b_iso.setter
+    def atom_b_iso(self, atoms_biso_tensor: torch.Tensor):
+        assert atoms_biso_tensor.shape == torch.Size([self.n_atoms]), f"atoms_biso_tensor should be in shape [{self.n_atoms}]"
+        self._atom_b_iso = atoms_biso_tensor
+    
+    @property
+    def atom_aniso_uw(self):
+        return self._atom_aniso_uw
+    
+    @atom_aniso_uw.setter
+    def atom_aniso_uw(self, atoms_aniso_uw_tensor: torch.Tensor):
+        assert (
+            atoms_aniso_uw_tensor.shape == torch.Size([self.n_atoms, 3, 3]) 
+        ), f"atoms_aniso_uw_tensor should be in shape [{self.n_atoms}, 3, 3]"
+        self._atom_aniso_uw = atoms_aniso_uw_tensor
+
+    @property
+    def atom_occ(self):
+        return self._atom_occ
+    
+    @atom_occ.setter
+    def atom_occ(self, atoms_occ_tensor: torch.Tensor):
+        assert atoms_occ_tensor.shape == torch.Size([self.n_atoms]), f"atoms_occ_tensor should be in shape [{self.n_atoms}]"
+        self._atom_occ = atoms_occ_tensor        
+
     @property
     def atom_pos_frac(self):
         """
@@ -198,8 +234,16 @@ class SFcalculator(object):
         A list of element name, ['C', 'N', 'H', ...]
         """
         return self._pdb.atom_name
-
-    def set_mtz(self, mtzdata, N_bins, expcolumns, set_experiment, freeflag, testset_value):
+    
+    @property
+    def n_atoms(self):
+        return len(self.atom_name)
+    
+    @property
+    def unique_atom(self):
+        return list(set(self.atom_name))
+    
+    def init_mtz(self, mtzdata, N_bins, expcolumns, set_experiment, freeflag, testset_value):
         """
         set mtz file for HKL list, resolution and experimental related properties
         """
@@ -297,7 +341,7 @@ class SFcalculator(object):
             self.Outlier = np.zeros(len(self.Fo)).astype(bool)
             print("No outlier detection, will use all reflections!")
     
-    def set_withoutmtz(self, dmin, n_bins):
+    def init_withoutmtz(self, dmin, n_bins):
         if not dmin:
             raise ValueError(
                 "high_resolution dmin OR a reference mtz file should be provided!"
@@ -314,7 +358,7 @@ class SFcalculator(object):
             self.HKL_array = None
             self.assign_resolution_bins(n_bins)
 
-    def _set_atomic_scattering(self):
+    def init_atomic_scattering(self):
         # A dictionary of atomic structural factor f0_sj of different atom types at different HKL Rupp's Book P280
         # f0_sj = [sum_{i=1}^4 {a_ij*exp(-b_ij* d*^2/4)} ] + c_j
         if self.anomalous:
@@ -462,27 +506,15 @@ class SFcalculator(object):
         """
         # Read and tensor-fy necessary inforamtion
         if not atoms_position_tensor is None:
-            assert (
-                len(atoms_position_tensor) == self.n_atoms
-            ), "Atoms in atoms_positions_tensor should be consistent with atom names in PDB model!"
             self.atom_pos_orth = atoms_position_tensor
 
         if not atoms_aniso_uw_tensor is None:
-            assert len(atoms_aniso_uw_tensor) == len(
-                self.atom_name
-            ), "Atoms in atoms_baniso_tensor should be consistent with atom names in PDB model!"
             self.atom_aniso_uw = atoms_aniso_uw_tensor
 
         if not atoms_biso_tensor is None:
-            assert len(atoms_biso_tensor) == len(
-                self.atom_name
-            ), "Atoms in atoms_biso_tensor should be consistent with atom names in PDB model!"
             self.atom_b_iso = atoms_biso_tensor
 
         if not atoms_occ_tensor is None:
-            assert len(atoms_occ_tensor) == len(
-                self.atom_name
-            ), "Atoms in atoms_occ_tensor should be consistent with atom names in PDB model!"
             self.atom_occ = atoms_occ_tensor
 
         self.Fprotein_asu = F_protein(
@@ -1191,7 +1223,7 @@ class SFcalculator(object):
             if Return:
                 return ftotal_asu_batch
 
-    def prepare_dataset(self, HKL_attr, F_attr):
+    def prepare_dataset(self, HKL_attr: str, F_attr: str):
         F_out = getattr(self, F_attr)
         HKL_out = getattr(self, HKL_attr)
         assert len(F_out) == len(
@@ -1211,7 +1243,9 @@ class SFcalculator(object):
         dataset["FMODEL_COMPLEX"] = assert_numpy(F_out)
         dataset.set_index(["H", "K", "L"], inplace=True)
         return dataset
-
+    
+    def savePDB(self, outname: str):
+        pass
 
 def F_protein(
     HKL_array,
