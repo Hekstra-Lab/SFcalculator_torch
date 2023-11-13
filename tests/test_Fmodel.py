@@ -1,5 +1,8 @@
 import pytest
 
+from os.path import exists
+import tempfile
+
 import numpy as np
 import reciprocalspaceship as rs
 import torch
@@ -8,7 +11,6 @@ from scipy.stats import pearsonr
 from SFC_Torch.io import PDBParser
 from SFC_Torch.Fmodel import SFcalculator
 from SFC_Torch.utils import assert_numpy, assert_tensor
-
 
 @pytest.mark.parametrize("case", [1, 2])
 def test_constructor_SFcalculator(data_pdb, data_mtz_exp, case):
@@ -196,3 +198,17 @@ def test_prepare_dataset(data_pdb, data_mtz_exp):
     sfcalculator.calc_ftotal()
     ds = sfcalculator.prepare_dataset("HKL_array", "Ftotal_HKL")
     assert len(ds) == 3197
+
+def test_savePDB(data_pdb, data_mtz_exp):
+    sfcalculator = SFcalculator(
+        data_pdb, mtzdata=data_mtz_exp, set_experiment=True)
+    sfcalculator.inspect_data()
+    sfcalculator.calc_fprotein(Return=False)
+    sfcalculator.calc_fsolvent(
+        dmin_mask=6.0, dmin_nonzero=3.0, Return=False)
+    sfcalculator.init_scales(requires_grad=False)
+    sfcalculator.calc_ftotal()
+    with tempfile.NamedTemporaryFile(suffix=".pdb") as temp:
+        sfcalculator.savePDB(temp.name)
+        assert exists(temp.name)
+    

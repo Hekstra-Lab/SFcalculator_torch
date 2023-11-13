@@ -26,7 +26,6 @@ from .utils import r_factor, assert_numpy, assert_tensor
 from .packingscore import packingscore_voxelgrid_torch
 from .io import PDBParser
 
-
 class SFcalculator(object):
     """
     A class to formalize the structural factor calculation.
@@ -1224,6 +1223,9 @@ class SFcalculator(object):
                 return ftotal_asu_batch
 
     def prepare_dataset(self, HKL_attr: str, F_attr: str):
+        """
+        create a rs.Dataset with HKL list and complex structure factor
+        """
         F_out = getattr(self, F_attr)
         HKL_out = getattr(self, HKL_attr)
         assert len(F_out) == len(
@@ -1245,7 +1247,23 @@ class SFcalculator(object):
         return dataset
     
     def savePDB(self, outname: str):
-        pass
+        """
+        Write out a PDB with current model coordinates
+        """
+        
+        self._pdb.set_positions(assert_numpy(self.atom_pos_orth))
+        self._pdb.set_biso(assert_numpy(self.atom_b_iso))
+        self._pdb.set_baniso(assert_numpy(self.atom_aniso_uw))
+        self._pdb.set_occ(assert_numpy(self.atom_occ))
+        
+        from datetime import date
+        from . import __version__, __author__
+        pdb_header = [
+            f'REMARK   1 CREATED WITH SFcalculator {__version__}, {date.today()}',
+            f'REMARK   1 AUTHOR {__author__}',
+        ]
+        self._pdb.pdb_header = pdb_header
+        self._pdb.savePDB(outname)
 
 def F_protein(
     HKL_array,
