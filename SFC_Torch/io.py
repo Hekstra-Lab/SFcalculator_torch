@@ -5,7 +5,7 @@ import urllib.request, os
 from tqdm import tqdm
 import pandas as pd
 
-from .utils import try_gpu, assert_numpy
+from .utils import assert_numpy
 
 
 def hier2array(structure):
@@ -133,6 +133,18 @@ class PDBParser(object):
         header = structure.make_pdb_headers().split("\n")
         not_cryst = ["CRYST1" not in i for i in header]
         self.pdb_header = [header[i] for i in range(len(header)) if not_cryst[i]]
+
+    @property
+    def sequence(self):
+        """
+        Get one code squence
+        """
+        CA_cras = [i for i in self.cra_name if "CA" in i]
+        sequence = list(map(lambda x: x.split('-')[2], CA_cras))
+        sequence = "".join([gemmi.find_tabulated_residue(r).one_letter_code for r in sequence])
+        return sequence
+
+
 
     def to_gemmi(self, include_header=True):
         """
