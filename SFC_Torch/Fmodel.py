@@ -615,12 +615,14 @@ class SFcalculator(object):
 
         kmasks = []
         kisos = []
-        ws = torch.abs(self.Fmask_HKL).pow(2)
+        Fmask_HKL = self.Fmask_HKL.detach().clone()
+        Fprotein_HKL = self.Fprotein_HKL.detach().clone()
+        ws = torch.abs(Fmask_HKL).pow(2)
         vs = 0.5 * torch.real(
-            self.Fprotein_HKL.conj() * self.Fmask_HKL
-            + self.Fprotein_HKL * self.Fmask_HKL.conj()
+            Fprotein_HKL.conj() * Fmask_HKL
+            + Fprotein_HKL * Fmask_HKL.conj()
         )
-        us = torch.abs(self.Fprotein_HKL).pow(2)
+        us = torch.abs(Fprotein_HKL).pow(2)
         Is = self.Fo.pow(2)
 
         for bin_i in np.sort(np.unique(self.bins)):
@@ -775,7 +777,7 @@ class SFcalculator(object):
             self.init_scales(requires_grad=True)
 
         def closure():
-            Fmodel = self.calc_ftotal()
+            Fmodel = self.calc_ftotal(scale_mode=True)
             Fmodel_mag = torch.abs(Fmodel)
             # LS loss
             loss = torch.sum(
@@ -828,7 +830,7 @@ class SFcalculator(object):
             self.init_scales(requires_grad=True)
 
         def closure():
-            Fmodel = self.calc_ftotal()
+            Fmodel = self.calc_ftotal(scale_mode=True)
             Fmodel_mag = torch.abs(Fmodel)
             # R factor
             loss = torch.sum(
@@ -893,7 +895,7 @@ class SFcalculator(object):
         ):
             def adam_stepopt(sub_boolean_mask):
                 Fmodel_i = self._calc_ftotal_bini(
-                    bin_i, index_i, self.HKL_array, self.Fprotein_HKL, self.Fmask_HKL
+                    bin_i, index_i, self.HKL_array, self.Fprotein_HKL, self.Fmask_HKL, scale_mode=True
                 )
                 Fmodel_mag = torch.abs(Fmodel_i)
                 # LS loss with subsampling
@@ -950,10 +952,13 @@ class SFcalculator(object):
             self.free_flag[~self.Outlier],
         )
 
-    def _calc_ftotal_bini(self, bin_i, index_i, HKL_array, Fprotein, Fmask):
+    def _calc_ftotal_bini(self, bin_i, index_i, HKL_array, Fprotein, Fmask, scale_mode=False):
         """
         calculate ftotal for bin i
         """
+        if scale_mode:
+            Fmask = Fmask.detach()
+            Fprotein = Fprotein.detach()
         scaled_fmask_i = Fmask[index_i] * self.kmasks[bin_i]
         fmodel_i = (
             self.kisos[bin_i]
@@ -966,7 +971,7 @@ class SFcalculator(object):
         )
         return fmodel_i
 
-    def calc_ftotal(self, bins=None, Return=True):
+    def calc_ftotal(self, bins=None, Return=True, scale_mode=False):
         """
         Calculate Ftotal = kiso * exp(-2*pi^2*s^T*Uaniso*s) * (Fprotein + kmask * Fmask)
 
@@ -992,7 +997,7 @@ class SFcalculator(object):
             for bin_i in bins:
                 index_i = self.bins == bin_i
                 ftotal_hkl[index_i] = self._calc_ftotal_bini(
-                    bin_i, index_i, self.HKL_array, self.Fprotein_HKL, self.Fmask_HKL
+                    bin_i, index_i, self.HKL_array, self.Fprotein_HKL, self.Fmask_HKL, scale_mode=scale_mode
                 )
             self.Ftotal_HKL = ftotal_hkl
             if Return:
@@ -1002,7 +1007,7 @@ class SFcalculator(object):
             for bin_i in bins:
                 index_i = self.bins == bin_i
                 ftotal_asu[index_i] = self._calc_ftotal_bini(
-                    bin_i, index_i, self.Hasu_array, self.Fprotein_asu, self.Fmask_asu
+                    bin_i, index_i, self.Hasu_array, self.Fprotein_asu, self.Fmask_asu, scale_mode=scale_mode
                 )
             self.Ftotal_asu = ftotal_asu
             if Return:
