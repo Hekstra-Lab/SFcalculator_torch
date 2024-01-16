@@ -318,7 +318,8 @@ class SFcalculator(object):
                 exp_mtz[freeflag].values == testset_value, True, False
             )
         except:
-            print("No Free Flag! Check your data!")
+            self.free_flag = np.zeros(len(self.Fo)).astype(bool) 
+            print("No Free Flag Column, will treat all elements as working set! Check your data!")
 
         # label outliers
         try:
