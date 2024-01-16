@@ -310,6 +310,9 @@ class SFcalculator(object):
             self.SigF = torch.tensor(
                 exp_mtz[expcolumns[1]].to_numpy(), device=self.device
             ).type(torch.float32)
+            nonpositive_Fo = assert_numpy(self.Fo <= 0.0)
+            if nonpositive_Fo.sum() > 0:
+                print(f"With {nonpositive_Fo.sum()} non-positive experimental magnitudes! Will be treated as outliers.")
         except:
             print(f"MTZ file doesn't contain {expcolumns[0]} or {expcolumns[1]}! Check your data!")
 
@@ -329,10 +332,10 @@ class SFcalculator(object):
             for i in range(self.n_bins):
                 index_i = self.bins == i
                 exp_mtz.loc[index_i, "SIGN"] = np.mean(
-                    exp_mtz[index_i]["FP"].to_numpy() ** 2
+                    exp_mtz[index_i][expcolumns[0]].to_numpy() ** 2
                     / exp_mtz[index_i]["EPSILON"].to_numpy()
                 )
-            exp_mtz["EP"] = exp_mtz["FP"] / np.sqrt(exp_mtz["EPSILON"].astype(float) * exp_mtz["SIGN"])
+            exp_mtz["EP"] = exp_mtz[expcolumns[0]] / np.sqrt(exp_mtz["EPSILON"].astype(float) * exp_mtz["SIGN"])
             self.Outlier = (
                 (exp_mtz["CENTRIC"] & (exp_mtz["EP"] > 4.89))
                 | ((~exp_mtz["CENTRIC"]) & (exp_mtz["EP"] > 3.72))
@@ -340,7 +343,9 @@ class SFcalculator(object):
         except:
             self.Outlier = np.zeros(len(self.Fo)).astype(bool)
             print("No outlier detection, will use all reflections!")
+        self.Outlier = self.Outlier | nonpositive_Fo 
     
+
     def init_withoutmtz(self, dmin, n_bins):
         if not dmin:
             raise ValueError(
