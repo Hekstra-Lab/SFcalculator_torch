@@ -325,7 +325,7 @@ def fetch_pdb(idlist, outpath):
         model_path = os.path.join(outpath, 'model_pdbs/')
         mmcif_path = os.path.join(outpath, 'model_mmcifs/')
         reflection_path = os.path.join(outpath, 'reflections/')
-        for folder in [sequence_path, model_path, reflection_path]:
+        for folder in [sequence_path, model_path, mmcif_path, reflection_path]:
             if os.path.exists(folder):
                 print(f"{folder:<80}" + f"{'already exists': >20}")
             else:

@@ -95,10 +95,14 @@ def test_fromatomslices(data_pdb, inplace):
         assert len(b.atom_pos) == 55
 
 def test_fetchpdb():
-    df = fetch_pdb(['4lZt', '1cTS'], outpath='../dev/')
-    assert df['code'].tolist() == ['4lzt', '1cts']
-    assert df['with_pdb'].tolist() == [1, 1]
-    assert df['with_mtz'].tolist() == [1, 0]
-    assert exists("../dev/models/4lzt.pdb")
-    assert exists("../dev/models/1cts.pdb")    
+    df = fetch_pdb(['4lZt', '1cTS', "1dUr"], outpath='../dev/')
+    assert df['code'].tolist() == ['4lzt', '1cts', '1dur']
+    assert df['with_pdb'].tolist() == [1, 1, 1]
+    assert df['with_mtz'].tolist() == [1, 0, 1]
+    assert df['with_cif'].tolist() == [1, 1, 1]
+    assert exists("../dev/model_pdbs/4lzt.pdb")
+    assert exists("../dev/model_pdbs/1dur.pdb")
+    assert exists("../dev/model_pdbs/1cts.pdb")    
     assert exists("../dev/reflections/4lzt.mtz")
+    assert exists("../dev/reflections/1dur.mtz")
+    assert exists("../dev/model_mmcifs/1dur.cif")
