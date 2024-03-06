@@ -8,6 +8,12 @@ def data_pdb():
     return filename
 
 @pytest.fixture
+def data_cif():
+    datapath = "data/1dur.cif"
+    filename = abspath(join(dirname(__file__), datapath))
+    return filename
+
+@pytest.fixture
 def data_mtz_exp():
     datapath = "data/1dur.mtz"
     filename = abspath(join(dirname(__file__), datapath))

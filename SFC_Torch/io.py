@@ -110,7 +110,10 @@ class PDBParser(object):
         data: pdb file path, or gemmi.Structure
         """
         if isinstance(data, str):
-            structure = gemmi.read_pdb(data)
+            if data.endswith("pdb"):
+                structure = gemmi.read_pdb(data)
+            elif data.endswith("cif"):
+                structure = gemmi.make_structure_from_block(gemmi.cif.read(data)[0])
         elif isinstance(data, gemmi.Structure):
             structure = data
         else:
@@ -291,6 +294,11 @@ class PDBParser(object):
     def savePDB(self, savefilename, include_header=True):
         structure = self.to_gemmi(include_header=include_header)
         structure.write_pdb(savefilename)
+    
+    def saveCIF(self, savefilename, include_header=True):
+        structure = self.to_gemmi(include_header=include_header)
+        structure.make_mmcif_block().write_file(savefilename)
+
 
 def fetch_pdb(idlist, outpath):
     '''
@@ -314,7 +322,8 @@ def fetch_pdb(idlist, outpath):
 
     if len(idlist) > 1:
         sequence_path = os.path.join(outpath, 'sequences/')
-        model_path = os.path.join(outpath, 'models/')
+        model_path = os.path.join(outpath, 'model_pdbs/')
+        mmcif_path = os.path.join(outpath, 'model_mmcifs/')
         reflection_path = os.path.join(outpath, 'reflections/')
         for folder in [sequence_path, model_path, reflection_path]:
             if os.path.exists(folder):
@@ -325,16 +334,19 @@ def fetch_pdb(idlist, outpath):
     else:
         sequence_path = outpath
         model_path = outpath
+        mmcif_path = outpath
         reflection_path = outpath
     
     codes = []
     with_sequence = []
     with_pdb = []
+    with_cif = []
     with_mtz = []
     for pdb_code in tqdm(idlist):
         valid_code = pdb_code.lower()
         seqlink = "https://www.rcsb.org/fasta/entry/" + valid_code.upper()
         pdblink = "https://files.rcsb.org/download/" + valid_code.upper() + ".pdb"
+        ciflink = "https://files.rcsb.org/download/" + valid_code.upper() + ".cif"
         mtzlink = "https://edmaps.rcsb.org/coefficients/" + valid_code + ".mtz"
         codes.append(valid_code)
 
@@ -348,7 +360,14 @@ def fetch_pdb(idlist, outpath):
             urllib.request.urlretrieve(pdblink, os.path.join(model_path, valid_code+".pdb"))
             with_pdb.append(1)
         except:
-            with_pdb.append(0) 
+            with_pdb.append(0)
+
+        try:
+            urllib.request.urlretrieve(ciflink, os.path.join(mmcif_path, valid_code+".cif"))
+            with_cif.append(1)
+        except:
+            with_cif.append(0)
+
         try:
             urllib.request.urlretrieve(mtzlink, os.path.join(reflection_path, valid_code+".mtz"))
             with_mtz.append(1)
@@ -359,6 +378,7 @@ def fetch_pdb(idlist, outpath):
         "code" : codes,
         "with_sequence" : with_sequence,
         "with_pdb" : with_pdb,
+        "with_cif" : with_cif,
         "with_mtz" : with_mtz
     })
     stat_df.to_csv(os.path.join(outpath, "fetchpdb.csv"))

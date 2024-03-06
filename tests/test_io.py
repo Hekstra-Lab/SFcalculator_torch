@@ -53,6 +53,19 @@ def test_savePDB(data_pdb):
         assert exists(temp.name)
 
 
+def test_readcif(data_pdb, data_cif):
+    a = PDBParser(data_pdb)
+    b = PDBParser(data_cif)
+    assert a.cra_name == b.cra_name
+    assert (a.atom_pos == b.atom_pos).all()
+    assert a.spacegroup.hm == b.spacegroup.hm
+
+def test_saveCIF(data_pdb):
+    a = PDBParser(data_pdb)
+    with tempfile.NamedTemporaryFile(suffix=".cif") as temp:
+        a.saveCIF(temp.name, include_header=True)
+        assert exists(temp.name)
+
 @pytest.mark.parametrize("inplace", [True, False])
 def test_selection(data_pdb, inplace):
     a = PDBParser(data_pdb)
