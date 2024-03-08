@@ -9,7 +9,7 @@ __version__ = getVersionNumber()
 
 # Top level API
 from .Fmodel import SFcalculator
-from .io import PDBParser, fetch_pdb
+from .io import PDBParser, fetch_pdb, fetch_pdbredo
 
 # Suboodules
 from . import utils

@@ -385,6 +385,78 @@ def fetch_pdb(idlist, outpath):
     return stat_df
 
 
+def fetch_pdbredo(idlist, outpath):
+    '''
+    Fetch re-refined and rebuilt moldes PDB-REDO, with static urllib
+    see https://pdb-redo.eu/download for a full list of entry description for future development
+
+    Parameters
+    ----------
+    idlist : [str]
+        List of PDB ids
+    
+    outpath : str
+
+    Returns
+    -------
+    DataFrame of fetch stats
+
+    files will be saved at outpath/pdbredo_db/<pdb-id>/xxx
+    '''
+
+    codes = []
+    with_pdb = []
+    with_cif = []
+    with_mtz = []
+    with_version = []
+    for pdb_code in tqdm(idlist):
+        
+        valid_code = pdb_code.lower()
+        parent_link = f"https://pdb-redo.eu/db/{valid_code}/"
+        pdblink = parent_link + f"{valid_code}_final.pdb"
+        ciflink = parent_link + f"{valid_code}_final.cif"
+        mtzlink = parent_link + f"{valid_code}_final.mtz"
+        versionlink = parent_link + "versions.json"
+        codes.append(valid_code)
+        
+        temp_path = os.path.join(outpath, "pdbredo_db", valid_code)
+        if not os.path.exists(temp_path):
+            os.makedirs(temp_path)
+
+        try:
+            urllib.request.urlretrieve(pdblink, os.path.join(temp_path, f"{valid_code}_final.pdb"))
+            with_pdb.append(1)
+        except:
+            with_pdb.append(0)
+
+        try:
+            urllib.request.urlretrieve(ciflink, os.path.join(temp_path, f"{valid_code}_final.cif"))
+            with_cif.append(1)
+        except:
+            with_cif.append(0)
+
+        try:
+            urllib.request.urlretrieve(mtzlink, os.path.join(temp_path, f"{valid_code}_final.mtz"))
+            with_mtz.append(1)
+        except:
+            with_mtz.append(0)
+
+        try:
+            urllib.request.urlretrieve(versionlink, os.path.join(temp_path, f"{valid_code}_versions.json"))
+            with_version.append(1)
+        except:
+            with_version.append(0)
+    
+    stat_df = pd.DataFrame({
+        "code" : codes,
+        "with_pdb" : with_pdb,
+        "with_cif" : with_cif,
+        "with_mtz" : with_mtz,
+        "with_version" : with_version,
+    })
+    stat_df.to_csv(os.path.join(outpath, "fetchpdbredo.csv"))
+    return stat_df
+
 
 
 
