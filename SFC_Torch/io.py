@@ -129,7 +129,11 @@ class PDBParser(object):
             self.cra_name,
             self.res_id,
         ) = hier2array(structure)
-        self.spacegroup = gemmi.SpaceGroup(structure.spacegroup_hm)
+        try:
+            self.spacegroup = gemmi.SpaceGroup(structure.spacegroup_hm)
+        except:
+            self.spacegroup = gemmi.SpaceGroup("P 1")
+            print("No valid spacegroup in the file, set as P 1", flush=True)
         self.cell = structure.cell
 
         # Save the pdb headers, exclude the CRYST1 line
