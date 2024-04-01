@@ -404,6 +404,7 @@ class SFcalculator(object):
         The labels will be stored in self.bins
 
         Urzhumtsev, A., et al. Acta Crystallographica Section D: Biological Crystallography 65.12 (2009)
+        https://doi.org/10.1107/S0907444909039638 
 
         Parameters
         ----------
