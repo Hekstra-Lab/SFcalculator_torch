@@ -537,9 +537,11 @@ class SFcalculator(object):
         )
         if not self.HKL_array is None:
             self.Fprotein_HKL = self.Fprotein_asu[self.asu2HKL_index]
+            self.Fmask_HKL = torch.zeros_like(self.Fprotein_HKL)
             if Return:
                 return self.Fprotein_HKL
         else:
+            self.Fmask_asu = torch.zeros_like(self.Fprotein_asu)
             if Return:
                 return self.Fprotein_asu
 
