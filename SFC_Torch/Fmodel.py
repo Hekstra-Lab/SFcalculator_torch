@@ -765,12 +765,7 @@ class SFcalculator(object):
             self.kmasks, self.kisos = self._init_kmask_kiso(requires_grad=requires_grad)
             self.uanisos = self._init_uaniso(requires_grad=requires_grad)
             Fmodel = self.calc_ftotal()
-            Fmodel_mag = torch.abs(Fmodel)
-            self.r_work, self.r_free = r_factor(
-                self.Fo[~self.Outlier],
-                Fmodel_mag[~self.Outlier],
-                self.free_flag[~self.Outlier],
-            )
+            self.r_work, self.r_free = self.get_rfactors(ftotal=Fmodel)
         else:
             self._set_scales(requires_grad)
 
@@ -807,12 +802,7 @@ class SFcalculator(object):
             start_time = time.time()
             loss = self.lbfgs.step(closure)
             Fmodel = self.calc_ftotal()
-            Fmodel_mag = torch.abs(Fmodel)
-            r_work, r_free = r_factor(
-                self.Fo[~self.Outlier],
-                Fmodel_mag[~self.Outlier],
-                self.free_flag[~self.Outlier],
-            )
+            r_work, r_free = self.get_rfactors(ftotal=Fmodel)
             loss_track.append(
                 [assert_numpy(loss), assert_numpy(r_work), assert_numpy(r_free)]
             )
@@ -859,12 +849,7 @@ class SFcalculator(object):
             start_time = time.time()
             loss = self.lbfgs.step(closure)
             Fmodel = self.calc_ftotal()
-            Fmodel_mag = torch.abs(Fmodel)
-            r_work, r_free = r_factor(
-                self.Fo[~self.Outlier],
-                Fmodel_mag[~self.Outlier],
-                self.free_flag[~self.Outlier],
-            )
+            r_work, r_free = self.get_rfactors(ftotal=Fmodel)
             loss_track.append(
                 [assert_numpy(loss), assert_numpy(r_work), assert_numpy(r_free)]
             )
@@ -954,12 +939,7 @@ class SFcalculator(object):
             )
 
         Fmodel = self.calc_ftotal()
-        Fmodel_mag = torch.abs(Fmodel)
-        self.r_work, self.r_free = r_factor(
-            self.Fo[~self.Outlier],
-            Fmodel_mag[~self.Outlier],
-            self.free_flag[~self.Outlier],
-        )
+        self.r_work, self.r_free = self.get_rfactors(ftotal=Fmodel)
 
     def _calc_ftotal_bini(self, bin_i, index_i, HKL_array, Fprotein, Fmask, scale_mode=False):
         """
@@ -1041,14 +1021,21 @@ class SFcalculator(object):
             print(
                 f"{self.bin_labels[i]:<15} {N_work:7d} {N_free:7d} {assert_numpy(torch.mean(self.Fo[index_i])):7.1f} {assert_numpy(torch.mean(torch.abs(ftotal[index_i]))):9.1f} {assert_numpy(r_worki):7.3f} {assert_numpy(r_freei):7.3f} {assert_numpy(self.kmasks[i]):7.3f} {assert_numpy(self.kisos[i]):7.3f}"
             )
-        self.r_work, self.r_free = r_factor(
+        self.r_work, self.r_free = self.get_rfactors(ftotal=ftotal)
+        print(f"r_work: {assert_numpy(self.r_work):<7.3f}")
+        print(f"r_free: {assert_numpy(self.r_free):<7.3f}")
+        print(f"Number of outliers: {np.sum(self.Outlier):<7d}")
+    
+    def get_rfactors(self, ftotal=None):
+        if ftotal is None:
+            ftotal = self.Ftotal_HKL.detach().clone()
+
+        r_work, r_free = r_factor(
             self.Fo[~self.Outlier],
             torch.abs(ftotal)[~self.Outlier],
             self.free_flag[~self.Outlier],
         )
-        print(f"r_work: {assert_numpy(self.r_work):<7.3f}")
-        print(f"r_free: {assert_numpy(self.r_free):<7.3f}")
-        print(f"Number of outliers: {np.sum(self.Outlier):<7d}")
+        return r_work, r_free
 
     def calc_fprotein_batch(self, atoms_position_batch, Return=False, PARTITION=20):
         """
