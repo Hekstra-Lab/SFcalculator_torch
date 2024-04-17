@@ -1074,9 +1074,11 @@ class SFcalculator(object):
         if not self.HKL_array is None:
             # type: ignore
             self.Fprotein_HKL_batch = self.Fprotein_asu_batch[:, self.asu2HKL_index]
+            self.Fmask_HKL_batch = torch.zeros_like(self.Fprotein_HKL_batch)
             if Return:
                 return self.Fprotein_HKL_batch
         else:
+            self.Fmask_asu_batch = torch.zeros_like(self.Fprotein_asu_batch)
             if Return:
                 return self.Fprotein_asu_batch
 
@@ -1220,7 +1222,7 @@ class SFcalculator(object):
             for bin_i in bins:
                 index_i = self.bins == bin_i
                 ftotal_asu_batch[index_i] = self._calc_ftotal_batch_bini(
-                    bin_i, index_i, self.Hasu_array, self.Fprotein_asu, self.Fmask_asu
+                    bin_i, index_i, self.Hasu_array, self.Fprotein_asu_batch, self.Fmask_asu_batch
                 )
             self.Ftotal_asu_batch = ftotal_asu_batch
             if Return:
