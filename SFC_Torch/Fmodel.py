@@ -277,9 +277,12 @@ class SFcalculator(object):
             "float32"
         )
         self.dmin = self.dHKL.min()
-        assert (
-            mtz_reference.cell == self.unit_cell
-        ), "Unit cell from mtz file does not match that in PDB file!"
+        try:
+            assert (
+                mtz_reference.cell == self.unit_cell
+            )
+        except:
+            print("Unit cell from mtz file does not match that in PDB file! Using the cell info from PDB file!")
         assert mtz_reference.spacegroup.hm == self.space_group.hm, "Space group from mtz file does not match that in PDB file!"  # type: ignore
         self.Hasu_array = generate_reciprocal_asu(
             self.unit_cell, self.space_group, self.dmin, anomalous=self.anomalous
