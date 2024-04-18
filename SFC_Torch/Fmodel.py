@@ -89,11 +89,12 @@ class SFcalculator(object):
         self.anomalous = anomalous
         self.device = device
         self.init_pdb(pdbmodel)
-        # Generate ASU HKL array and Corresponding d*^2 array
         if mtzdata is not None:
             self.init_mtz(mtzdata, n_bins, expcolumns, set_experiment, freeflag, testset_value)
         else:
             self.init_withoutmtz(dmin, n_bins)
+        self._init_spacegroup()
+        self._init_cell()
         self.init_atomic_scattering()
         self.inspected = False
 
@@ -101,51 +102,13 @@ class SFcalculator(object):
         """
         set pdb topology, symmetry operations, unit_cell properties, and initialize model coordinates
         """
-        if type(pdbmodel) == str:
+        if isinstance(pdbmodel, str):
             self._pdb = PDBParser(pdbmodel)  # sfc.PDBparser object
-        elif type(pdbmodel) == PDBParser:
+        elif isinstance(pdbmodel, PDBParser):
             self._pdb = pdbmodel
         else:
             raise TypeError("pdbmodel should be PDBparser instance or path str to a pdb file!")
         
-        # set spacegroup related properties
-        self.space_group = self._pdb.spacegroup # gemmi.SpaceGroup object
-        self.operations = self.space_group.operations()  # gemmi.GroupOps object
-        self.R_G_tensor_stack = assert_tensor(
-            np.array([np.array(sym_op.rot) / sym_op.DEN for sym_op in self.operations]),
-            arr_type=torch.float32,
-            device=self.device,
-        )
-        self.T_G_tensor_stack = assert_tensor(
-            np.array(
-                [np.array(sym_op.tran) / sym_op.DEN for sym_op in self.operations]
-            ),
-            arr_type=torch.float32,
-            device=self.device,
-        )
-
-        # set unit cell related properties
-        self.unit_cell = self._pdb.cell  # gemmi.UnitCell object
-        self.orth2frac_tensor = torch.tensor(
-            self.unit_cell.fractionalization_matrix.tolist(), device=self.device
-        ).type(torch.float32)
-        self.frac2orth_tensor = torch.tensor(
-            self.unit_cell.orthogonalization_matrix.tolist(), device=self.device
-        ).type(torch.float32)
-        self.reciprocal_cell = self.unit_cell.reciprocal()  # gemmi.UnitCell object
-        # [ar, br, cr, cos(alpha_r), cos(beta_r), cos(gamma_r)]
-        self.reciprocal_cell_paras = torch.tensor(
-            [
-                self.reciprocal_cell.a,
-                self.reciprocal_cell.b,
-                self.reciprocal_cell.c,
-                np.cos(np.deg2rad(self.reciprocal_cell.alpha)),
-                np.cos(np.deg2rad(self.reciprocal_cell.beta)),
-                np.cos(np.deg2rad(self.reciprocal_cell.gamma)),
-            ],
-            device=self.device,
-        ).type(torch.float32)
-
         # set molecule related property
         # Tensor atom's Positions in orthogonal space, [Nc,3]
         self._atom_pos_orth = assert_tensor(self._pdb.atom_pos, device=self.device, arr_type=torch.float32)
@@ -173,6 +136,63 @@ class SFcalculator(object):
                 print(
                     "Can't find wavelength record in the PDB file, or it doesn't match your input wavelength!"
                 )
+
+    @property
+    def space_group(self):
+        return self._pdb.spacegroup
+    
+    @space_group.setter
+    def space_group(self, spacegroup):
+        self._pdb.set_spacegroup(spacegroup)
+        self._init_spacegroup()
+    
+    @property
+    def unit_cell(self):
+        return self._pdb.cell
+    
+    @unit_cell.setter
+    def unit_cell(self, cell):
+        self._pdb.set_unitcell(cell)
+        self._init_cell()
+
+    def _init_spacegroup(self):
+        # Set up spacegroup related property
+        self.operations = self.space_group.operations()  # gemmi.GroupOps object
+        self.R_G_tensor_stack = assert_tensor(
+            np.array([np.array(sym_op.rot) / sym_op.DEN for sym_op in self.operations]),
+            arr_type=torch.float32,
+            device=self.device,
+        )
+        self.T_G_tensor_stack = assert_tensor(
+            np.array(
+                [np.array(sym_op.tran) / sym_op.DEN for sym_op in self.operations]
+            ),
+            arr_type=torch.float32,
+            device=self.device,
+        )
+    
+    def _init_cell(self):
+        # Set up unit cell related property
+        self.orth2frac_tensor = torch.tensor(
+            self.unit_cell.fractionalization_matrix.tolist(), device=self.device
+        ).type(torch.float32)
+        self.frac2orth_tensor = torch.tensor(
+            self.unit_cell.orthogonalization_matrix.tolist(), device=self.device
+        ).type(torch.float32)
+        self.reciprocal_cell = self.unit_cell.reciprocal()  # gemmi.UnitCell object
+        # [ar, br, cr, cos(alpha_r), cos(beta_r), cos(gamma_r)]
+        self.reciprocal_cell_paras = torch.tensor(
+            [
+                self.reciprocal_cell.a,
+                self.reciprocal_cell.b,
+                self.reciprocal_cell.c,
+                np.cos(np.deg2rad(self.reciprocal_cell.alpha)),
+                np.cos(np.deg2rad(self.reciprocal_cell.beta)),
+                np.cos(np.deg2rad(self.reciprocal_cell.gamma)),
+            ],
+            device=self.device,
+        ).type(torch.float32)
+    
     @property
     def atom_pos_orth(self):
         return self._atom_pos_orth
@@ -258,6 +278,7 @@ class SFcalculator(object):
             mtz_reference.dropna(axis=0, subset=expcolumns, inplace=True)
         except:
             raise ValueError(f"{expcolumns} columns not included in the mtz file!")
+        
         if self.anomalous:
             # Try to get the wavelength from MTZ file
             try:
@@ -271,20 +292,26 @@ class SFcalculator(object):
                 print(
                     "Can't find wavelength record in the MTZ file, or it doesn't match with other sources"
                 )
+
+        if (mtz_reference.cell == self._pdb.cell):
+            pass
+        else:
+            print("Unit cell from mtz file does not match that in PDB file! Using the cell info from MTZ file!")
+            self._pdb.set_unitcell(mtz_reference.cell)
+
+        if (mtz_reference.spacegroup.hm == self._pdb.spacegroup.hm):
+            pass
+        else:
+            print("Space group from mtz file does not match that in PDB file! Using the spacegroup from MTZ file!")  # type: ignore
+            self._pdb.set_spacegroup(mtz_reference.spacegroup)
+
         # HKL array from the reference mtz file, [N,3]
         self.HKL_array = mtz_reference.get_hkls()
         self.dHKL = self.unit_cell.calculate_d_array(self.HKL_array).astype(
             "float32"
         )
         self.dmin = self.dHKL.min()
-        try:
-            assert (
-                mtz_reference.cell == self.unit_cell
-            )
-        except:
-            print("Unit cell from mtz file does not match that in PDB file! Using the cell info from MTZ file!")
-            self.unit_cell = mtz_reference.cell
-        assert mtz_reference.spacegroup.hm == self.space_group.hm, "Space group from mtz file does not match that in PDB file!"  # type: ignore
+            
         self.Hasu_array = generate_reciprocal_asu(
             self.unit_cell, self.space_group, self.dmin, anomalous=self.anomalous
         )
@@ -357,6 +384,7 @@ class SFcalculator(object):
             )
         else:
             self.dmin = dmin
+            # Generate ASU HKL array and Corresponding d*^2 array
             self.Hasu_array = generate_reciprocal_asu(
                 self.unit_cell, self.space_group, self.dmin
             )
