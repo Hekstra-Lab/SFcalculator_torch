@@ -11,8 +11,9 @@ __version__ = getVersionNumber()
 from .Fmodel import SFcalculator
 from .io import PDBParser, fetch_pdb, fetch_pdbredo
 
-# Suboodules
+# Submodules
 from . import utils
 from . import patterson
+from . import packingscore
 
 
