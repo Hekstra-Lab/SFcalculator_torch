@@ -282,7 +282,8 @@ class SFcalculator(object):
                 mtz_reference.cell == self.unit_cell
             )
         except:
-            print("Unit cell from mtz file does not match that in PDB file! Using the cell info from PDB file!")
+            print("Unit cell from mtz file does not match that in PDB file! Using the cell info from MTZ file!")
+            self.unit_cell = mtz_reference.cell
         assert mtz_reference.spacegroup.hm == self.space_group.hm, "Space group from mtz file does not match that in PDB file!"  # type: ignore
         self.Hasu_array = generate_reciprocal_asu(
             self.unit_cell, self.space_group, self.dmin, anomalous=self.anomalous
