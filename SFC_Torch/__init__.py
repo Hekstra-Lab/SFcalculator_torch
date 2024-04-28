@@ -10,6 +10,7 @@ __version__ = getVersionNumber()
 # Top level API
 from .Fmodel import SFcalculator
 from .io import PDBParser, fetch_pdb, fetch_pdbredo
+from .symmetry import get_polar_axis
 
 # Submodules
 from . import utils
