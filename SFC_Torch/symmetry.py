@@ -3,7 +3,7 @@ import gemmi
 import torch
 import reciprocalspaceship as rs
 import pandas as pd
-from typing import Optional, List
+from typing import Optional, List, Union
 
 ccp4_hkl_asu = [
     0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,  2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
@@ -275,7 +275,7 @@ def asu2p1_torch(atom_pos_orth, unitcell, spacegroup,
         return sym_oped_pos_orth
 
 
-def get_polar_axis(spacegroup : gemmi.SpaceGroup) -> List[int] | None:
+def get_polar_axis(spacegroup : gemmi.SpaceGroup) -> Optional[List[int]]:
     """
     Return list of polar axis of a spacegroup
 
