@@ -288,6 +288,23 @@ class SFcalculator(object):
         frac_pos = torch.einsum("n...x,yx->n...y", orth_pos, self.orth2frac_tensor)
         return frac_pos
     
+    def exp_sym(self, frac_pos: torch.Tensor | None = None) -> torch.Tensor:
+        """
+        Apply all symmetry operations to the fractional coordinates
+
+        Args:
+            frac_pos, torch.Tensor, [n_points, 3]
+                fractional coordinates of model in single ASU. 
+                If not given, will use self.atom_pos_frac
+        Returns:
+            torch.Tensor, [n_points, n_ops, 3]
+                fractional coordinates of symmetry operated models        
+        """
+        if frac_pos is None:
+            frac_pos = self.atom_pos_frac
+        sym_oped_frac_pos = torch.einsum("oxy,ay->aox", self.R_G_tensor_stack, frac_pos) + self.T_G_tensor_stack
+        return sym_oped_frac_pos
+    
     def init_mtz(self, mtzdata, N_bins, expcolumns, set_experiment, freeflag, testset_value):
         """
         set mtz file for HKL list, resolution and experimental related properties

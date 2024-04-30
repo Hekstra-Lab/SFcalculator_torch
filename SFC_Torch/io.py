@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import gemmi
 import urllib.request, os
 
@@ -180,6 +182,41 @@ class PDBParser(object):
     @property
     def atom_pos_frac(self):
         return self.orth2frac(self.atom_pos)
+    
+    @property
+    def operations(self):
+        return self.spacegroup.operations() 
+
+    @property
+    def R_G_stack(self):
+        """
+        [n_ops, 3, 3], np.ndarray
+        """
+        return np.array([np.array(sym_op.rot) / sym_op.DEN for sym_op in self.operations])
+    
+    @property
+    def T_G_stack(self):
+        """
+        [n_ops, 3], np.ndarray
+        """
+        return np.array([np.array(sym_op.tran) / sym_op.DEN for sym_op in self.operations])
+    
+    def exp_sym(self, frac_pos: np.ndarray | None = None) -> np.ndarray:
+        """
+        Apply all symmetry operations to the fractional coordinates
+
+        Args:
+            frac_pos, np.ndarray, [n_points, 3]
+                fractional coordinates of model in single ASU. 
+                If not given, will use self.atom_pos_frac
+        Returns:
+            np.ndarray, [n_points, n_ops, 3]
+                fractional coordinates of symmetry operated models
+        """
+        if frac_pos is None:
+            frac_pos = self.atom_pos_frac
+        sym_oped_frac_pos = np.einsum("oxy,ay->aox", self.R_G_stack, frac_pos) + self.T_G_stack
+        return sym_oped_frac_pos
 
     def set_spacegroup(self, spacegroup):
         """
