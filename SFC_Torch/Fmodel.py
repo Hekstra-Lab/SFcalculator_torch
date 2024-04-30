@@ -238,7 +238,7 @@ class SFcalculator(object):
         """
         Tensor of atom's Positions in fractional space, [Nc,3]
         """
-        return torch.tensordot(self.atom_pos_orth, self.orth2frac_tensor.T, 1)
+        return self.orth2frac(self.atom_pos_orth)
 
     @property
     def cra_name(self):
@@ -261,6 +261,32 @@ class SFcalculator(object):
     @property
     def unique_atom(self):
         return list(set(self.atom_name))
+    
+    def frac2orth(self, frac_pos: torch.Tensor) -> torch.Tensor:
+        """
+        Convert fractional coordinates to orthogonal coordinates
+
+        Args:
+            frac_pos: torch.Tensor, [n_points, ..., 3]
+        
+        Returns:
+            orthogonal coordinates, torch.Tensor
+        """
+        orth_pos = torch.einsum("n...x,yx->n...y", frac_pos, self.frac2orth_tensor)
+        return orth_pos
+    
+    def orth2frac(self, orth_pos: torch.Tensor) -> torch.Tensor:
+        """
+        Convert orthogonal coordinates to fractional coordinates
+
+        Args:
+            orth_pos: torch.Tensor, [n_points, ..., 3]
+        
+        Returns:
+            fractional coordinates, torch.Tensor
+        """
+        frac_pos = torch.einsum("n...x,yx->n...y", orth_pos, self.orth2frac_tensor)
+        return frac_pos
     
     def init_mtz(self, mtzdata, N_bins, expcolumns, set_experiment, freeflag, testset_value):
         """
