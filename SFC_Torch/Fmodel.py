@@ -90,7 +90,7 @@ class SFcalculator(object):
         self.device = device
         self.init_pdb(pdbmodel)
         if mtzdata is not None:
-            self.init_mtz(mtzdata, n_bins, expcolumns, set_experiment, freeflag, testset_value)
+            self.init_mtz(mtzdata, n_bins, expcolumns, set_experiment, freeflag, testset_value, dmin)
         else:
             self.init_withoutmtz(dmin, n_bins)
         self._init_spacegroup()
@@ -305,7 +305,7 @@ class SFcalculator(object):
         sym_oped_frac_pos = torch.einsum("oxy,ay->aox", self.R_G_tensor_stack, frac_pos) + self.T_G_tensor_stack
         return sym_oped_frac_pos
     
-    def init_mtz(self, mtzdata, N_bins, expcolumns, set_experiment, freeflag, testset_value):
+    def init_mtz(self, mtzdata, N_bins, expcolumns, set_experiment, freeflag, testset_value, dmin):
         """
         set mtz file for HKL list, resolution and experimental related properties
         """
@@ -353,7 +353,14 @@ class SFcalculator(object):
         self.dHKL = self.unit_cell.calculate_d_array(self.HKL_array).astype(
             "float32"
         )
-        self.dmin = self.dHKL.min()
+        if dmin is None:
+            self.dmin = self.dHKL.min()
+            resol_bool = None
+        else:
+            resol_bool = self.dHKL >= dmin
+            self.dmin = dmin
+            self.dHKL = self.dHKL[resol_bool]
+            self.HKL_array = self.HKL_array[resol_bool] 
             
         self.Hasu_array = generate_reciprocal_asu(
             self.unit_cell, self.space_group, self.dmin, anomalous=self.anomalous
@@ -368,15 +375,18 @@ class SFcalculator(object):
         # assign reslution bins
         self.assign_resolution_bins(bins=N_bins)
         if set_experiment:
-            self.set_experiment(mtz_reference, expcolumns, freeflag, testset_value)
+            self.set_experiment(mtz_reference, expcolumns, freeflag, testset_value, resol_bool)
 
-    def set_experiment(self, exp_mtz, expcolumns=["FP", "SIGFP"], freeflag="FreeR_flag", testset_value=0):
+    def set_experiment(self, exp_mtz, expcolumns=["FP", "SIGFP"], freeflag="FreeR_flag", testset_value=0, resol_bool=None):
         """
         Set experimental data for refinement,
         including Fo, SigF, free_flag, Outlier
 
         exp_mtz, rs.Dataset, mtzfile read by reciprocalspaceship
         """
+        if resol_bool is None:
+            resol_bool = np.ones_like(self.dHKL, dtype=bool)
+        exp_mtz = exp_mtz[resol_bool].copy()
         try:
             self.Fo = torch.tensor(exp_mtz[expcolumns[0]].to_numpy(), device=self.device).type(
                 torch.float32
