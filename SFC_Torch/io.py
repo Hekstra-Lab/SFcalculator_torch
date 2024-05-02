@@ -347,7 +347,7 @@ class PDBParser(object):
         Returns:
             frational coordinates, np.ndarray, [n_points, ..., 3]
         """
-        orth2frac_mat = np.array(self.unit_cell.fractionalization_matrix.tolist())
+        orth2frac_mat = np.array(self.cell.fractionalization_matrix.tolist())
         frac_pos = np.einsum("n...x,yx->n...y", orth_pos, orth2frac_mat)
         return frac_pos
     
@@ -361,7 +361,7 @@ class PDBParser(object):
         Returns:
             orthogonal coordinates, np.ndarray, [n_points, ..., 3]
         """
-        frac2orth_mat = np.array(self.unit_cell.orthogonalization_matrix.tolist())
+        frac2orth_mat = np.array(self.cell.orthogonalization_matrix.tolist())
         orth_pos = np.einsum("n...x,yx->n...y", frac_pos, frac2orth_mat)
         return orth_pos
     
