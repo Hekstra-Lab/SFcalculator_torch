@@ -146,12 +146,12 @@ class PDBParser(object):
         """
         Get one code squence
         """
-        CA_cras = [i for i in self.cra_name if "CA" in i]
+        seen = set()
+        unique_cras = [x for x in self.cra_name if x not in seen and not seen.add(x)]
+        CA_cras = [i for i in unique_cras if "CA" in i]
         sequence = list(map(lambda x: x.split('-')[2], CA_cras))
         sequence = "".join([gemmi.find_tabulated_residue(r).one_letter_code for r in sequence])
         return sequence
-
-
 
     def to_gemmi(self, include_header=True):
         """
