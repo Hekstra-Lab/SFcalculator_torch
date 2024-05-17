@@ -1,7 +1,9 @@
+from __future__ import annotations
+
 import gemmi
-import torch
-import numpy as np
 import urllib.request, os
+
+import numpy as np
 from tqdm import tqdm
 import pandas as pd
 
@@ -178,6 +180,45 @@ class PDBParser(object):
             # Next time user parse the new pdb with gemmi, will have all the info again
             st.raw_remarks = self.pdb_header
         return st
+    
+    @property
+    def atom_pos_frac(self):
+        return self.orth2frac(self.atom_pos)
+    
+    @property
+    def operations(self):
+        return self.spacegroup.operations() 
+
+    @property
+    def R_G_stack(self):
+        """
+        [n_ops, 3, 3], np.ndarray
+        """
+        return np.array([np.array(sym_op.rot) / sym_op.DEN for sym_op in self.operations])
+    
+    @property
+    def T_G_stack(self):
+        """
+        [n_ops, 3], np.ndarray
+        """
+        return np.array([np.array(sym_op.tran) / sym_op.DEN for sym_op in self.operations])
+    
+    def exp_sym(self, frac_pos: np.ndarray | None = None) -> np.ndarray:
+        """
+        Apply all symmetry operations to the fractional coordinates
+
+        Args:
+            frac_pos, np.ndarray, [n_points, 3]
+                fractional coordinates of model in single ASU. 
+                If not given, will use self.atom_pos_frac
+        Returns:
+            np.ndarray, [n_points, n_ops, 3]
+                fractional coordinates of symmetry operated models
+        """
+        if frac_pos is None:
+            frac_pos = self.atom_pos_frac
+        sym_oped_frac_pos = np.einsum("oxy,ay->aox", self.R_G_stack, frac_pos) + self.T_G_stack
+        return sym_oped_frac_pos
 
     def set_spacegroup(self, spacegroup):
         """
@@ -290,11 +331,42 @@ class PDBParser(object):
             return new_parser
         
     def move2cell(self):
+        """
+        move the current model into the cell by shifting
+        """
         frac_mat = np.array(self.cell.fractionalization_matrix.tolist())
         mean_positions_frac = np.dot(frac_mat, np.mean(assert_numpy(self.atom_pos), axis=0))
         shift_vec = np.dot(np.linalg.inv(frac_mat), mean_positions_frac % 1.0 - mean_positions_frac)
         self.set_positions(assert_numpy(self.atom_pos) + shift_vec)
 
+    def orth2frac(self, orth_pos: np.ndarray) -> np.ndarray:
+        """
+        Convert orthogonal coordinates to fractional coordinates
+
+        Args:
+            orth_pos: np.ndarray, [n_points, ..., 3]
+        
+        Returns:
+            frational coordinates, np.ndarray, [n_points, ..., 3]
+        """
+        orth2frac_mat = np.array(self.cell.fractionalization_matrix.tolist())
+        frac_pos = np.einsum("n...x,yx->n...y", orth_pos, orth2frac_mat)
+        return frac_pos
+    
+    def frac2orth(self, frac_pos: np.ndarray) -> np.ndarray:
+        """
+        Convert fractional coordinates to orthogonal coordinates
+
+        Args:
+            frac_pos: np.ndarray, [n_points, ..., 3]
+        
+        Returns:
+            orthogonal coordinates, np.ndarray, [n_points, ..., 3]
+        """
+        frac2orth_mat = np.array(self.cell.orthogonalization_matrix.tolist())
+        orth_pos = np.einsum("n...x,yx->n...y", frac_pos, frac2orth_mat)
+        return orth_pos
+    
     def savePDB(self, savefilename, include_header=True):
         structure = self.to_gemmi(include_header=include_header)
         structure.write_pdb(savefilename)

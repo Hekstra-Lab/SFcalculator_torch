@@ -89,11 +89,12 @@ class SFcalculator(object):
         self.anomalous = anomalous
         self.device = device
         self.init_pdb(pdbmodel)
-        # Generate ASU HKL array and Corresponding d*^2 array
         if mtzdata is not None:
-            self.init_mtz(mtzdata, n_bins, expcolumns, set_experiment, freeflag, testset_value)
+            self.init_mtz(mtzdata, n_bins, expcolumns, set_experiment, freeflag, testset_value, dmin)
         else:
             self.init_withoutmtz(dmin, n_bins)
+        self._init_spacegroup()
+        self._init_cell()
         self.init_atomic_scattering()
         self.inspected = False
 
@@ -101,51 +102,13 @@ class SFcalculator(object):
         """
         set pdb topology, symmetry operations, unit_cell properties, and initialize model coordinates
         """
-        if type(pdbmodel) == str:
+        if isinstance(pdbmodel, str):
             self._pdb = PDBParser(pdbmodel)  # sfc.PDBparser object
-        elif type(pdbmodel) == PDBParser:
+        elif isinstance(pdbmodel, PDBParser):
             self._pdb = pdbmodel
         else:
             raise TypeError("pdbmodel should be PDBparser instance or path str to a pdb file!")
         
-        # set spacegroup related properties
-        self.space_group = self._pdb.spacegroup # gemmi.SpaceGroup object
-        self.operations = self.space_group.operations()  # gemmi.GroupOps object
-        self.R_G_tensor_stack = assert_tensor(
-            np.array([np.array(sym_op.rot) / sym_op.DEN for sym_op in self.operations]),
-            arr_type=torch.float32,
-            device=self.device,
-        )
-        self.T_G_tensor_stack = assert_tensor(
-            np.array(
-                [np.array(sym_op.tran) / sym_op.DEN for sym_op in self.operations]
-            ),
-            arr_type=torch.float32,
-            device=self.device,
-        )
-
-        # set unit cell related properties
-        self.unit_cell = self._pdb.cell  # gemmi.UnitCell object
-        self.orth2frac_tensor = torch.tensor(
-            self.unit_cell.fractionalization_matrix.tolist(), device=self.device
-        ).type(torch.float32)
-        self.frac2orth_tensor = torch.tensor(
-            self.unit_cell.orthogonalization_matrix.tolist(), device=self.device
-        ).type(torch.float32)
-        self.reciprocal_cell = self.unit_cell.reciprocal()  # gemmi.UnitCell object
-        # [ar, br, cr, cos(alpha_r), cos(beta_r), cos(gamma_r)]
-        self.reciprocal_cell_paras = torch.tensor(
-            [
-                self.reciprocal_cell.a,
-                self.reciprocal_cell.b,
-                self.reciprocal_cell.c,
-                np.cos(np.deg2rad(self.reciprocal_cell.alpha)),
-                np.cos(np.deg2rad(self.reciprocal_cell.beta)),
-                np.cos(np.deg2rad(self.reciprocal_cell.gamma)),
-            ],
-            device=self.device,
-        ).type(torch.float32)
-
         # set molecule related property
         # Tensor atom's Positions in orthogonal space, [Nc,3]
         self._atom_pos_orth = assert_tensor(self._pdb.atom_pos, device=self.device, arr_type=torch.float32)
@@ -173,6 +136,63 @@ class SFcalculator(object):
                 print(
                     "Can't find wavelength record in the PDB file, or it doesn't match your input wavelength!"
                 )
+
+    @property
+    def space_group(self):
+        return self._pdb.spacegroup
+    
+    @space_group.setter
+    def space_group(self, spacegroup):
+        self._pdb.set_spacegroup(spacegroup)
+        self._init_spacegroup()
+    
+    @property
+    def unit_cell(self):
+        return self._pdb.cell
+    
+    @unit_cell.setter
+    def unit_cell(self, cell):
+        self._pdb.set_unitcell(cell)
+        self._init_cell()
+
+    def _init_spacegroup(self):
+        # Set up spacegroup related property
+        self.operations = self.space_group.operations()  # gemmi.GroupOps object
+        self.R_G_tensor_stack = assert_tensor(
+            np.array([np.array(sym_op.rot) / sym_op.DEN for sym_op in self.operations]),
+            arr_type=torch.float32,
+            device=self.device,
+        )
+        self.T_G_tensor_stack = assert_tensor(
+            np.array(
+                [np.array(sym_op.tran) / sym_op.DEN for sym_op in self.operations]
+            ),
+            arr_type=torch.float32,
+            device=self.device,
+        )
+    
+    def _init_cell(self):
+        # Set up unit cell related property
+        self.orth2frac_tensor = torch.tensor(
+            self.unit_cell.fractionalization_matrix.tolist(), device=self.device
+        ).type(torch.float32)
+        self.frac2orth_tensor = torch.tensor(
+            self.unit_cell.orthogonalization_matrix.tolist(), device=self.device
+        ).type(torch.float32)
+        self.reciprocal_cell = self.unit_cell.reciprocal()  # gemmi.UnitCell object
+        # [ar, br, cr, cos(alpha_r), cos(beta_r), cos(gamma_r)]
+        self.reciprocal_cell_paras = torch.tensor(
+            [
+                self.reciprocal_cell.a,
+                self.reciprocal_cell.b,
+                self.reciprocal_cell.c,
+                np.cos(np.deg2rad(self.reciprocal_cell.alpha)),
+                np.cos(np.deg2rad(self.reciprocal_cell.beta)),
+                np.cos(np.deg2rad(self.reciprocal_cell.gamma)),
+            ],
+            device=self.device,
+        ).type(torch.float32)
+    
     @property
     def atom_pos_orth(self):
         return self._atom_pos_orth
@@ -218,7 +238,7 @@ class SFcalculator(object):
         """
         Tensor of atom's Positions in fractional space, [Nc,3]
         """
-        return torch.tensordot(self.atom_pos_orth, self.orth2frac_tensor.T, 1)
+        return self.orth2frac(self.atom_pos_orth)
 
     @property
     def cra_name(self):
@@ -242,7 +262,50 @@ class SFcalculator(object):
     def unique_atom(self):
         return list(set(self.atom_name))
     
-    def init_mtz(self, mtzdata, N_bins, expcolumns, set_experiment, freeflag, testset_value):
+    def frac2orth(self, frac_pos: torch.Tensor) -> torch.Tensor:
+        """
+        Convert fractional coordinates to orthogonal coordinates
+
+        Args:
+            frac_pos: torch.Tensor, [n_points, ..., 3]
+        
+        Returns:
+            orthogonal coordinates, torch.Tensor
+        """
+        orth_pos = torch.einsum("n...x,yx->n...y", frac_pos, self.frac2orth_tensor)
+        return orth_pos
+    
+    def orth2frac(self, orth_pos: torch.Tensor) -> torch.Tensor:
+        """
+        Convert orthogonal coordinates to fractional coordinates
+
+        Args:
+            orth_pos: torch.Tensor, [n_points, ..., 3]
+        
+        Returns:
+            fractional coordinates, torch.Tensor
+        """
+        frac_pos = torch.einsum("n...x,yx->n...y", orth_pos, self.orth2frac_tensor)
+        return frac_pos
+    
+    def exp_sym(self, frac_pos: torch.Tensor | None = None) -> torch.Tensor:
+        """
+        Apply all symmetry operations to the fractional coordinates
+
+        Args:
+            frac_pos, torch.Tensor, [n_points, 3]
+                fractional coordinates of model in single ASU. 
+                If not given, will use self.atom_pos_frac
+        Returns:
+            torch.Tensor, [n_points, n_ops, 3]
+                fractional coordinates of symmetry operated models        
+        """
+        if frac_pos is None:
+            frac_pos = self.atom_pos_frac
+        sym_oped_frac_pos = torch.einsum("oxy,ay->aox", self.R_G_tensor_stack, frac_pos) + self.T_G_tensor_stack
+        return sym_oped_frac_pos
+    
+    def init_mtz(self, mtzdata, N_bins, expcolumns, set_experiment, freeflag, testset_value, dmin):
         """
         set mtz file for HKL list, resolution and experimental related properties
         """
@@ -258,6 +321,7 @@ class SFcalculator(object):
             mtz_reference.dropna(axis=0, subset=expcolumns, inplace=True)
         except:
             raise ValueError(f"{expcolumns} columns not included in the mtz file!")
+        
         if self.anomalous:
             # Try to get the wavelength from MTZ file
             try:
@@ -271,19 +335,33 @@ class SFcalculator(object):
                 print(
                     "Can't find wavelength record in the MTZ file, or it doesn't match with other sources"
                 )
+
+        if (mtz_reference.cell == self._pdb.cell):
+            pass
+        else:
+            print("Unit cell from mtz file does not match that in PDB file! Using the cell info from MTZ file!")
+            self._pdb.set_unitcell(mtz_reference.cell)
+
+        if (mtz_reference.spacegroup.hm == self._pdb.spacegroup.hm):
+            pass
+        else:
+            print("Space group from mtz file does not match that in PDB file! Using the spacegroup from MTZ file!")  # type: ignore
+            self._pdb.set_spacegroup(mtz_reference.spacegroup)
+
         # HKL array from the reference mtz file, [N,3]
         self.HKL_array = mtz_reference.get_hkls()
         self.dHKL = self.unit_cell.calculate_d_array(self.HKL_array).astype(
             "float32"
         )
-        self.dmin = self.dHKL.min()
-        try:
-            assert (
-                mtz_reference.cell == self.unit_cell
-            )
-        except:
-            print("Unit cell from mtz file does not match that in PDB file! Using the cell info from PDB file!")
-        assert mtz_reference.spacegroup.hm == self.space_group.hm, "Space group from mtz file does not match that in PDB file!"  # type: ignore
+        if dmin is None:
+            self.dmin = self.dHKL.min()
+            resol_bool = None
+        else:
+            resol_bool = self.dHKL >= dmin
+            self.dmin = dmin
+            self.dHKL = self.dHKL[resol_bool]
+            self.HKL_array = self.HKL_array[resol_bool] 
+            
         self.Hasu_array = generate_reciprocal_asu(
             self.unit_cell, self.space_group, self.dmin, anomalous=self.anomalous
         )
@@ -297,15 +375,18 @@ class SFcalculator(object):
         # assign reslution bins
         self.assign_resolution_bins(bins=N_bins)
         if set_experiment:
-            self.set_experiment(mtz_reference, expcolumns, freeflag, testset_value)
+            self.set_experiment(mtz_reference, expcolumns, freeflag, testset_value, resol_bool)
 
-    def set_experiment(self, exp_mtz, expcolumns=["FP", "SIGFP"], freeflag="FreeR_flag", testset_value=0):
+    def set_experiment(self, exp_mtz, expcolumns=["FP", "SIGFP"], freeflag="FreeR_flag", testset_value=0, resol_bool=None):
         """
         Set experimental data for refinement,
         including Fo, SigF, free_flag, Outlier
 
         exp_mtz, rs.Dataset, mtzfile read by reciprocalspaceship
         """
+        if resol_bool is None:
+            resol_bool = np.ones_like(self.dHKL, dtype=bool)
+        exp_mtz = exp_mtz[resol_bool].copy()
         try:
             self.Fo = torch.tensor(exp_mtz[expcolumns[0]].to_numpy(), device=self.device).type(
                 torch.float32
@@ -356,6 +437,7 @@ class SFcalculator(object):
             )
         else:
             self.dmin = dmin
+            # Generate ASU HKL array and Corresponding d*^2 array
             self.Hasu_array = generate_reciprocal_asu(
                 self.unit_cell, self.space_group, self.dmin
             )
@@ -768,12 +850,7 @@ class SFcalculator(object):
             self.kmasks, self.kisos = self._init_kmask_kiso(requires_grad=requires_grad)
             self.uanisos = self._init_uaniso(requires_grad=requires_grad)
             Fmodel = self.calc_ftotal()
-            Fmodel_mag = torch.abs(Fmodel)
-            self.r_work, self.r_free = r_factor(
-                self.Fo[~self.Outlier],
-                Fmodel_mag[~self.Outlier],
-                self.free_flag[~self.Outlier],
-            )
+            self.r_work, self.r_free = self.get_rfactors(ftotal=Fmodel)
         else:
             self._set_scales(requires_grad)
 
@@ -810,12 +887,7 @@ class SFcalculator(object):
             start_time = time.time()
             loss = self.lbfgs.step(closure)
             Fmodel = self.calc_ftotal()
-            Fmodel_mag = torch.abs(Fmodel)
-            r_work, r_free = r_factor(
-                self.Fo[~self.Outlier],
-                Fmodel_mag[~self.Outlier],
-                self.free_flag[~self.Outlier],
-            )
+            r_work, r_free = self.get_rfactors(ftotal=Fmodel)
             loss_track.append(
                 [assert_numpy(loss), assert_numpy(r_work), assert_numpy(r_free)]
             )
@@ -862,12 +934,7 @@ class SFcalculator(object):
             start_time = time.time()
             loss = self.lbfgs.step(closure)
             Fmodel = self.calc_ftotal()
-            Fmodel_mag = torch.abs(Fmodel)
-            r_work, r_free = r_factor(
-                self.Fo[~self.Outlier],
-                Fmodel_mag[~self.Outlier],
-                self.free_flag[~self.Outlier],
-            )
+            r_work, r_free = self.get_rfactors(ftotal=Fmodel)
             loss_track.append(
                 [assert_numpy(loss), assert_numpy(r_work), assert_numpy(r_free)]
             )
@@ -957,12 +1024,7 @@ class SFcalculator(object):
             )
 
         Fmodel = self.calc_ftotal()
-        Fmodel_mag = torch.abs(Fmodel)
-        self.r_work, self.r_free = r_factor(
-            self.Fo[~self.Outlier],
-            Fmodel_mag[~self.Outlier],
-            self.free_flag[~self.Outlier],
-        )
+        self.r_work, self.r_free = self.get_rfactors(ftotal=Fmodel)
 
     def _calc_ftotal_bini(self, bin_i, index_i, HKL_array, Fprotein, Fmask, scale_mode=False):
         """
@@ -1044,14 +1106,21 @@ class SFcalculator(object):
             print(
                 f"{self.bin_labels[i]:<15} {N_work:7d} {N_free:7d} {assert_numpy(torch.mean(self.Fo[index_i])):7.1f} {assert_numpy(torch.mean(torch.abs(ftotal[index_i]))):9.1f} {assert_numpy(r_worki):7.3f} {assert_numpy(r_freei):7.3f} {assert_numpy(self.kmasks[i]):7.3f} {assert_numpy(self.kisos[i]):7.3f}"
             )
-        self.r_work, self.r_free = r_factor(
+        self.r_work, self.r_free = self.get_rfactors(ftotal=ftotal)
+        print(f"r_work: {assert_numpy(self.r_work):<7.3f}")
+        print(f"r_free: {assert_numpy(self.r_free):<7.3f}")
+        print(f"Number of outliers: {np.sum(self.Outlier):<7d}")
+    
+    def get_rfactors(self, ftotal=None):
+        if ftotal is None:
+            ftotal = self.Ftotal_HKL.detach().clone()
+
+        r_work, r_free = r_factor(
             self.Fo[~self.Outlier],
             torch.abs(ftotal)[~self.Outlier],
             self.free_flag[~self.Outlier],
         )
-        print(f"r_work: {assert_numpy(self.r_work):<7.3f}")
-        print(f"r_free: {assert_numpy(self.r_free):<7.3f}")
-        print(f"Number of outliers: {np.sum(self.Outlier):<7d}")
+        return r_work, r_free
 
     def calc_fprotein_batch(self, atoms_position_batch, Return=False, PARTITION=20):
         """
@@ -1087,9 +1156,11 @@ class SFcalculator(object):
         if not self.HKL_array is None:
             # type: ignore
             self.Fprotein_HKL_batch = self.Fprotein_asu_batch[:, self.asu2HKL_index]
+            self.Fmask_HKL_batch = torch.zeros_like(self.Fprotein_HKL_batch)
             if Return:
                 return self.Fprotein_HKL_batch
         else:
+            self.Fmask_asu_batch = torch.zeros_like(self.Fprotein_asu_batch)
             if Return:
                 return self.Fprotein_asu_batch
 
@@ -1233,7 +1304,7 @@ class SFcalculator(object):
             for bin_i in bins:
                 index_i = self.bins == bin_i
                 ftotal_asu_batch[index_i] = self._calc_ftotal_batch_bini(
-                    bin_i, index_i, self.Hasu_array, self.Fprotein_asu, self.Fmask_asu
+                    bin_i, index_i, self.Hasu_array, self.Fprotein_asu_batch, self.Fmask_asu_batch
                 )
             self.Ftotal_asu_batch = ftotal_asu_batch
             if Return:

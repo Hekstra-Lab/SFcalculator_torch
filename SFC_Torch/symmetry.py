@@ -1,7 +1,11 @@
+from __future__ import annotations
+
 import numpy as np
+import gemmi
 import torch
 import reciprocalspaceship as rs
 import pandas as pd
+from typing import List
 
 ccp4_hkl_asu = [
     0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,  2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
@@ -25,6 +29,30 @@ asu_cases = {
     7: lambda h, k, l: (h >= k) & (k >= 0) & ((h > k) | (l >= 0)),
     8: lambda h, k, l: (h >= 0) & (((l >= h) & (k > h)) | ((l == h) & (k == h))),
     9: lambda h, k, l: (k >= l) & (l >= h) & (h >= 0),
+}
+
+# Spagegroup with polar axis (arbitrary origin axis)
+polar_cases = {
+    1: [0, 1, 2], # P1
+    3: [1], # P2
+    4: [1], # P21
+    5: [1], # C2
+    75: [2], # P4
+    76: [2], # P41
+    77: [2], # P42
+    78: [2], # P43
+    79: [2], # I4
+    80: [2], # I41
+    143: [2], # P3
+    144: [2], # P31
+    145: [2], # P32
+    146: [2], # R3;H
+    168: [2], # P6
+    169: [2], # P61
+    170: [2], # P65
+    171: [2], # P62
+    172: [2], # P64
+    173: [2], # P63
 }
 
 def expand_to_p1(spacegroup, Hasu_array, Fasu_tensor, Batch=False, dmin_mask=6.0, unitcell=None, anomalous=False):
@@ -247,3 +275,17 @@ def asu2p1_torch(atom_pos_orth, unitcell, spacegroup,
     else:
         sym_oped_pos_orth = torch.tensordot(sym_oped_pos_frac, frac2orth_tensor.T, 1)
         return sym_oped_pos_orth
+
+
+def get_polar_axis(spacegroup : gemmi.SpaceGroup) -> List[int] | None:
+    """
+    Return list of polar axis of a spacegroup
+
+    Args:
+        spacegroup : gemmi.SpaceGroup
+    
+    Return:
+        List[int] | None
+    """
+    sg_id = spacegroup.number
+    return polar_cases.get(sg_id)
