@@ -409,9 +409,14 @@ class SFcalculator(object):
             print("No Free Flag Column, will treat all elements as working set! Check your data!")
 
         # label outliers
+        # Detecting outliers in non-redundant diffraction data, Read, 1999
         try:
             exp_mtz.label_centrics(inplace=True)
             exp_mtz.compute_multiplicity(inplace=True)
+            self.centric = exp_mtz["CENTRIC"].to_numpy()
+            self.epsilon = torch.tensor(exp_mtz["EPSILON"].to_numpy(), device=self.device).type(
+                torch.float32
+            )
             exp_mtz["SIGN"] = 0.0
             for i in range(self.n_bins):
                 index_i = self.bins == i
@@ -420,6 +425,13 @@ class SFcalculator(object):
                     / exp_mtz[index_i]["EPSILON"].to_numpy()
                 )
             exp_mtz["EP"] = exp_mtz[expcolumns[0]] / np.sqrt(exp_mtz["EPSILON"].astype(float) * exp_mtz["SIGN"])
+            self._SigN = torch.tensor(exp_mtz["SIGN"].to_numpy(), device=self.device).type(
+                torch.float32
+            ) 
+            self.Eo = torch.tensor(exp_mtz["EP"].to_numpy(), device=self.device).type(
+                torch.float32
+            )
+            self.SigEo = self.SigF / (self._SigN * self.epsilon).sqrt()
             self.Outlier = (
                 (exp_mtz["CENTRIC"] & (exp_mtz["EP"] > 4.89))
                 | ((~exp_mtz["CENTRIC"]) & (exp_mtz["EP"] > 3.72))
@@ -429,7 +441,6 @@ class SFcalculator(object):
             print("No outlier detection, will use all reflections!")
         self.Outlier = self.Outlier | nonpositive_Fo 
     
-
     def init_withoutmtz(self, dmin, n_bins):
         if not dmin:
             raise ValueError(
@@ -1109,12 +1120,67 @@ class SFcalculator(object):
             self.Ftotal_asu = ftotal_asu
             if Return:
                 return ftotal_asu
+    
+    def calc_Ec(self, Ftotal_HKL=None):
+        """
+        compute normalized magnitudes from Fc
+        
+        Args:
+            Ftotal_HKL (torch.Tensor) : [N_HKL] or [N_batch, N_HKL]
+        
+        Returns:
+            Ec_HKL : [N_HKL] or [N_batch, N_HKL]
+        """ 
+        if Ftotal_HKL is None:
+            Ftotal_HKL = self.Ftotal_HKL
 
-    def summarize(self):
+        SigmaP = torch.zeros_like(Ftotal_HKL, dtype=torch.float32)
+        for i in range(self.n_bins):
+            index_i = self.bins == i
+            SigmaP[..., index_i] = torch.mean(
+                Ftotal_HKL[..., index_i].abs().square()
+                / self.epsilon[index_i], dim=-1, keepdims=True
+            )
+        Ec_HKL = Ftotal_HKL / torch.sqrt(self.epsilon * SigmaP)
+        return Ec_HKL
+    
+    def get_sigmaA(self, Ec_HKL, subset="working"):
+        """
+        Compute sigmaA using corr(Eo, Ec)
+
+        Args:
+            Ec_HKL (torch.tensor) : [N_HKL] or [N_batch, N_HKL]
+        
+        Returns:
+            sigmaAs [N_bins] or [N_batch, N_bins]
+        """
+        if subset == "working":
+            subset_boolean = (~self.free_flag) & (~self.Outlier)
+        else:
+            subset_boolean = (~self.Outlier)
+        Ecalc = Ec_HKL.abs().detach().clone()
+        sigmaAs = torch.zeros(*Ecalc.shape[:-1], self.n_bins, dtype=torch.float32, device=self.device)
+        for i in range(self.n_bins):
+            index_i = self.bins[subset_boolean] == i
+            Eobs_i = self.Eo[subset_boolean][index_i].square() # [N_subset]
+            Ecalc_i = Ecalc[..., subset_boolean][..., index_i].square() # [N_batch, N_subset] or [N_subset]
+            # Compute correlation coefficient
+            Eoi_centered = Eobs_i - Eobs_i.mean()
+            Eci_centered = Ecalc_i - torch.mean(Ecalc_i, dim=-1, keepdims=True)
+            Covi = (Eci_centered @ Eoi_centered) / (Eoi_centered.shape[0] -1)
+            Eoi_std = torch.std(Eoi_centered, correction=0)
+            Eci_std = torch.std(Eci_centered, dim=-1, correction=0)
+            sigmaAs[..., i] = (Covi / (Eoi_std * Eci_std)).clamp(min=0.001, max=0.999).sqrt()
+        return sigmaAs
+
+    def summarize(self, Ftotal_HKL=None):
         """
         Print model quality log like phenix.model_vs_data
         """
-        ftotal = self.calc_ftotal(Return=True)
+        if Ftotal_HKL is None:
+            ftotal = self.calc_ftotal(Return=True)
+        else:
+            ftotal = Ftotal_HKL
         _, counts = np.unique(self.bins, return_counts=True)
         print(
             f"{'Resolution':15} {'N_work':>7} {'N_free':>7} {'<Fobs>':>7} {'<|Fmodel|>':>9} {'R_work':>7} {'R_free':>7} {'k_mask':>7} {'k_iso':>7}"
