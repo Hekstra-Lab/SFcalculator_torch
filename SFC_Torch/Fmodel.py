@@ -1200,14 +1200,16 @@ class SFcalculator(object):
         print(f"r_free: {assert_numpy(self.r_free):<7.3f}")
         print(f"Number of outliers: {np.sum(self.Outlier):<7d}")
     
-    def get_rfactors(self, ftotal=None):
+    def get_rfactors(self, ftotal=None, mask=None):
         if ftotal is None:
             ftotal = self.Ftotal_HKL.detach().clone()
-
+        if mask is None:
+            mask = np.ones(len(self.Fo)).astype(bool)
+        bool_array = (~self.Outlier) & mask
         r_work, r_free = r_factor(
-            self.Fo[~self.Outlier],
-            torch.abs(ftotal)[~self.Outlier],
-            self.free_flag[~self.Outlier],
+            self.Fo[bool_array],
+            torch.abs(ftotal)[bool_array],
+            self.free_flag[bool_array],
         )
         return r_work, r_free
 
