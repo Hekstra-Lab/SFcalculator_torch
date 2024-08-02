@@ -21,6 +21,7 @@ setup(name="SFcalculator_torch",
     install_requires=[
         "gemmi>=0.5.6",
         "reciprocalspaceship>=0.9.18",
+        "numpy==1.26.4",
         "tqdm",
     ],
     setup_requires=["pytest-runner"],
