@@ -1419,8 +1419,8 @@ class SFcalculator(object):
         dataset["L"] = HKL_out[:, 2]
         dataset["FMODEL"] = assert_numpy(F_out_mag)
         dataset["PHIFMODEL"] = assert_numpy(F_out_phase)
-        dataset["FMODEL_COMPLEX"] = assert_numpy(F_out)
         dataset.set_index(["H", "K", "L"], inplace=True)
+        dataset.infer_mtz_dtypes(inplace=True)
         return dataset
     
     def savePDB(self, outname: str):
