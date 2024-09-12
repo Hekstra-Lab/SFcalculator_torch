@@ -538,7 +538,7 @@ class SFcalculator(object):
         if return_labels:
             return self.bin_labels
 
-    def inspect_data(self, verbose=False):
+    def inspect_data(self, verbose=False, spacing=4.5):
         """
         Do an inspection of data, for hints about
         1. solvent percentage for mask calculation
@@ -547,7 +547,7 @@ class SFcalculator(object):
         # solvent percentage
         vdw_rad = vdw_rad_tensor(self.atom_name, device=self.device)
         uc_grid_orth_tensor = unitcell_grid_center(
-            self.unit_cell, spacing=4.5, return_tensor=True, device=self.device
+            self.unit_cell, spacing=spacing, return_tensor=True, device=self.device
         )
         occupancy, _ = packingscore_voxelgrid_torch(
             self.atom_pos_orth,
@@ -1421,8 +1421,8 @@ class SFcalculator(object):
         dataset["L"] = HKL_out[:, 2]
         dataset["FMODEL"] = assert_numpy(F_out_mag)
         dataset["PHIFMODEL"] = assert_numpy(F_out_phase)
-        dataset["FMODEL_COMPLEX"] = assert_numpy(F_out)
         dataset.set_index(["H", "K", "L"], inplace=True)
+        dataset.infer_mtz_dtypes(inplace=True)
         return dataset
     
     def savePDB(self, outname: str):
