@@ -22,6 +22,7 @@ def hier2array(structure):
     atom_b_aniso = []
     atom_b_iso = []
     atom_occ = []
+    atom_altloc = []
     res_id = []
     i = 0
     model = structure[i]  # gemmi.Model object
@@ -49,6 +50,8 @@ def hier2array(structure):
                 atom_b_iso.append(atom.b_iso)
                 # A list of occupancy [P1,P2,....], [Nc]
                 atom_occ.append(atom.occ)
+                # A list of altloc label
+                atom_altloc.append(atom.altloc)
                 # A list of residue id
                 res_id.append(res.seqid.num)
             j += 1
@@ -56,11 +59,11 @@ def hier2array(structure):
     atom_b_aniso = np.array(atom_b_aniso)
     atom_b_iso = np.array(atom_b_iso)
     atom_occ = np.array(atom_occ)
-    return atom_pos, atom_b_aniso, atom_b_iso, atom_occ, atom_name, cra_name, res_id
+    return atom_pos, atom_b_aniso, atom_b_iso, atom_occ, atom_name, cra_name, atom_altloc, res_id
 
 
 def array2hier(
-    atom_pos, atom_b_aniso, atom_b_iso, atom_occ, atom_name, cra_name, res_id
+    atom_pos, atom_b_aniso, atom_b_iso, atom_occ, atom_name, cra_name, atom_altloc, res_id
 ):
     new_model = gemmi.Model("SFC")
     for i in range(len(cra_name)):
@@ -88,6 +91,7 @@ def array2hier(
         current_atom.b_iso = atom_b_iso[i]
         current_atom.pos = gemmi.Position(*atom_pos[i])
         current_atom.occ = atom_occ[i]
+        current_atom.altloc = atom_altloc[i]
 
         current_res.add_atom(current_atom)
 
@@ -129,6 +133,7 @@ class PDBParser(object):
             self.atom_occ,
             self.atom_name,
             self.cra_name,
+            self.atom_altloc,
             self.res_id,
         ) = hier2array(structure)
         try:
@@ -166,6 +171,7 @@ class PDBParser(object):
             self.atom_occ,
             self.atom_name,
             self.cra_name,
+            self.atom_altloc,
             self.res_id,
         )
         st.spacegroup_hm = self.spacegroup.hm
@@ -293,6 +299,7 @@ class PDBParser(object):
                 self.atom_occ,
                 self.atom_name,
                 self.cra_name,
+                self.atom_altloc,
                 self.res_id,
             ) = hier2array(sele_st)
         else:
@@ -313,6 +320,7 @@ class PDBParser(object):
             self.atom_occ = self.atom_occ[atom_slices]
             self.atom_name = [self.atom_name[i] for i in atom_slices]
             self.cra_name = [self.cra_name[i] for i in atom_slices]
+            self.atom_altloc = [self.atom_altloc[i] for i in atom_slices]
             self.res_id = [self.res_id[i] for i in atom_slices]
         else:
             st = array2hier(
@@ -322,6 +330,7 @@ class PDBParser(object):
                 self.atom_occ[atom_slices],
                 [self.atom_name[i] for i in atom_slices],
                 [self.cra_name[i] for i in atom_slices],
+                [self.atom_altloc[i] for i in atom_slices],
                 [self.res_id[i] for i in atom_slices],
             )
             st.spacegroup_hm = self.spacegroup.hm
