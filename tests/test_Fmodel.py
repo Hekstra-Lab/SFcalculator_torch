@@ -34,7 +34,7 @@ def test_constructor_SFcalculator(data_pdb, data_mtz_exp, data_cif, data_sfcif, 
         bins_labels = sfcalculator.assign_resolution_bins(return_labels=True)
         assert sfcalculator.inspected
         assert np.isclose(assert_numpy(sfcalculator.solventpct), 0.1667, 1e-3)
-        assert sfcalculator.gridsize == [50, 60, 60]
+        assert sfcalculator.gridsize == [50, 64, 64]
         assert len(sfcalculator.HKL_array) == 3256
         assert len(sfcalculator.Hasu_array) == 4035
         assert len(sfcalculator.bins) == 3256

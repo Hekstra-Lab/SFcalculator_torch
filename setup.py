@@ -17,7 +17,7 @@ setup(name="SFcalculator_torch",
     author_email='minhuanli@g.harvard.edu',
     packages=find_packages(),
     include_package_data=True,
-    python_requires=">=3.8",
+    python_requires=">=3.9",
     install_requires=[
         "gemmi>=0.5.6",
         "reciprocalspaceship>=0.9.18",
