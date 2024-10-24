@@ -12,8 +12,8 @@ from SFC_Torch.io import PDBParser
 from SFC_Torch.Fmodel import SFcalculator
 from SFC_Torch.utils import assert_numpy, assert_tensor
 
-@pytest.mark.parametrize("case", [1, 2])
-def test_constructor_SFcalculator(data_pdb, data_mtz_exp, case):
+@pytest.mark.parametrize("case", [1, 2, 3])
+def test_constructor_SFcalculator(data_pdb, data_mtz_exp, data_cif, data_sfcif, case):
     if case == 1:
         sfcalculator = SFcalculator(
             data_pdb, mtzdata=data_mtz_exp, set_experiment=True)
@@ -27,7 +27,20 @@ def test_constructor_SFcalculator(data_pdb, data_mtz_exp, case):
         assert len(sfcalculator.bins) == 3197
         assert np.all(np.sort(np.unique(sfcalculator.bins)) == np.arange(0,10))
         assert len(bins_labels) == 10
-    else:
+    elif case == 2:
+        sfcalculator = SFcalculator(
+            data_cif, mtzdata=data_sfcif, set_experiment=True)
+        sfcalculator.inspect_data()
+        bins_labels = sfcalculator.assign_resolution_bins(return_labels=True)
+        assert sfcalculator.inspected
+        assert np.isclose(assert_numpy(sfcalculator.solventpct), 0.1667, 1e-3)
+        assert sfcalculator.gridsize == [50, 60, 60]
+        assert len(sfcalculator.HKL_array) == 3256
+        assert len(sfcalculator.Hasu_array) == 4035
+        assert len(sfcalculator.bins) == 3256
+        assert np.all(np.sort(np.unique(sfcalculator.bins)) == np.arange(0,10))
+        assert len(bins_labels) == 10
+    elif case == 3:
         sfcalculator = SFcalculator(
             data_pdb, mtzdata=None, dmin=2.5, set_experiment=True)
         sfcalculator.inspect_data()

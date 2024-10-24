@@ -14,6 +14,12 @@ def data_cif():
     return filename
 
 @pytest.fixture
+def data_sfcif():
+    datapath = "data/1dur-sf.cif"
+    filename = abspath(join(dirname(__file__), datapath))
+    return filename
+
+@pytest.fixture
 def data_mtz_exp():
     datapath = "data/1dur.mtz"
     filename = abspath(join(dirname(__file__), datapath))

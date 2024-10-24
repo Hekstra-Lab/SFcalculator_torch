@@ -409,8 +409,9 @@ def fetch_pdb(idlist, outpath):
         sequence_path = os.path.join(outpath, 'sequences/')
         model_path = os.path.join(outpath, 'model_pdbs/')
         mmcif_path = os.path.join(outpath, 'model_mmcifs/')
+        sfcif_path = os.path.join(outpath, 'model_sfcifs/')
         reflection_path = os.path.join(outpath, 'reflections/')
-        for folder in [sequence_path, model_path, mmcif_path, reflection_path]:
+        for folder in [sequence_path, model_path, mmcif_path, sfcif_path, reflection_path]:
             if os.path.exists(folder):
                 print(f"{folder:<80}" + f"{'already exists': >20}")
             else:
@@ -420,18 +421,21 @@ def fetch_pdb(idlist, outpath):
         sequence_path = outpath
         model_path = outpath
         mmcif_path = outpath
+        sfcif_path = outpath
         reflection_path = outpath
     
     codes = []
     with_sequence = []
     with_pdb = []
-    with_cif = []
+    with_mmcif = []
+    with_sfcif = []
     with_mtz = []
     for pdb_code in tqdm(idlist):
         valid_code = pdb_code.lower()
         seqlink = "https://www.rcsb.org/fasta/entry/" + valid_code.upper()
         pdblink = "https://files.rcsb.org/download/" + valid_code.upper() + ".pdb"
-        ciflink = "https://files.rcsb.org/download/" + valid_code.upper() + ".cif"
+        mmciflink = "https://files.rcsb.org/download/" + valid_code.upper() + ".cif"
+        sfciflink = "https://files.rcsb.org/download/" + valid_code.upper() + "-sf.cif"
         mtzlink = "https://edmaps.rcsb.org/coefficients/" + valid_code + ".mtz"
         codes.append(valid_code)
 
@@ -448,10 +452,16 @@ def fetch_pdb(idlist, outpath):
             with_pdb.append(0)
 
         try:
-            urllib.request.urlretrieve(ciflink, os.path.join(mmcif_path, valid_code+".cif"))
-            with_cif.append(1)
+            urllib.request.urlretrieve(mmciflink, os.path.join(mmcif_path, valid_code+".cif"))
+            with_mmcif.append(1)
         except:
-            with_cif.append(0)
+            with_mmcif.append(0)
+
+        try:
+            urllib.request.urlretrieve(sfciflink, os.path.join(sfcif_path, valid_code+"-sf.cif"))
+            with_sfcif.append(1)
+        except:
+            with_sfcif.append(0)
 
         try:
             urllib.request.urlretrieve(mtzlink, os.path.join(reflection_path, valid_code+".mtz"))
@@ -463,7 +473,8 @@ def fetch_pdb(idlist, outpath):
         "code" : codes,
         "with_sequence" : with_sequence,
         "with_pdb" : with_pdb,
-        "with_cif" : with_cif,
+        "with_mmcif" : with_mmcif,
+        "with_sfcif" : with_sfcif,
         "with_mtz" : with_mtz
     })
     stat_df.to_csv(os.path.join(outpath, "fetchpdb.csv"))

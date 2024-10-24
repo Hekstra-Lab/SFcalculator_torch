@@ -57,6 +57,7 @@ class SFcalculator(object):
 
         mtzdata: str | rs.Dataset 
             path to the mtz data or instance of rs.Dataset, will use the HKL list in the mtz instead, override dmin with an inference
+            also support reflection data in cif file
     
         n_bins: str, default 10
             Number of resolution bins used in the reciprocal space
@@ -320,11 +321,16 @@ class SFcalculator(object):
         """
 
         if type(mtzdata) == str:
-            mtz_reference = rs.read_mtz(mtzdata)
+            if mtzdata.endswith(".mtz"):
+                mtz_reference = rs.read_mtz(mtzdata)
+            elif mtzdata.endswith(".cif"):
+                mtz_reference = rs.read_cif(mtzdata)
+            else:
+                raise ValueError("mtzdata should be rs.Dataset object or path str to a mtz/cif file!")
         elif type(mtzdata) == rs.DataSet:
             mtz_reference = mtzdata
         else:
-            raise TypeError("mtzdata should be rs.Dataset object or path str to a mtz file!")
+            raise TypeError("mtzdata should be rs.Dataset object or path str to a mtz/cif file!")
 
         try:
             mtz_reference.dropna(axis=0, subset=expcolumns, inplace=True)
