@@ -43,7 +43,8 @@ class SFcalculator(object):
         expcolumns:     List[str] = ["FP", "SIGFP"],
         freeflag:       str = "FreeR_flag",
         testset_value:  int = 0,
-        device:         torch.device = try_gpu()
+        device:         torch.device = try_gpu(),
+        mode:           str = "xray",
     ) -> None:
         """
         Initialize with necessary reusable information, like spacegroup, unit cell info, HKL_list, et.c.
@@ -81,13 +82,21 @@ class SFcalculator(object):
             in Phenix(CNS/XPOLAR) convention
         
         testset_value: int, default 0
+            Test set values in the freeflag column
 
         device: torch.device
+
+        mode: str, default xray
+            xray or cryoem, use xray atomic factors or elelctron atomic factors
         """
         
         self.wavelength = wavelength
         self.anomalous = anomalous
         self.device = device
+        assert mode in ["xray", "cryoem"], ValueError(
+                "mode has to be xray or cryoem!"
+            )
+        self.mode = mode
         self.init_pdb(pdbmodel)
         if mtzdata is not None:
             self.init_mtz(mtzdata, n_bins, expcolumns, set_experiment, freeflag, testset_value, dmin)
@@ -460,9 +469,21 @@ class SFcalculator(object):
             self.assign_resolution_bins(n_bins)
 
     def init_atomic_scattering(self):
-        # A dictionary of atomic structural factor f0_sj of different atom types at different HKL Rupp's Book P280
-        # f0_sj = [sum_{i=1}^4 {a_ij*exp(-b_ij* d*^2/4)} ] + c_j
+        """
+        mode xray: xray atomic scatterring factor
+            A dictionary of atomic structural factor f0_sj of different atom types at different HKL Rupp's Book P280
+            f0_sj = [sum_{i=1}^4 {a_ij*exp(-b_ij* d*^2/4)} ] + c_j
+        
+        mode cryoem: electron atomic scattering factor
+            The electron form factors are parametrized as 5 Gaussians, using coefficients from International Tables 
+            for Crystallography Volume C, edition 2011, table 4.3.2.2 (pp. 282-283), “Elastic atomic scattering 
+            factors of electrons for neutral atoms and s up to 2.0 A–1”. The same parametrization is used in cctbx and in CCP4.
+        """
+        
         if self.anomalous:
+            assert self.mode == "xray", ValueError(
+                "Only support anomalous scattering for xray mode!"
+            )
             assert self.wavelength is not None, ValueError(
                 "If you need anomalous scattering contribution, provide the wavelength info from input, pdb or mtz file!"
             )
@@ -470,15 +491,21 @@ class SFcalculator(object):
         self.full_atomic_sf_asu = {}
         for atom_type in self.unique_atom:
             element = gemmi.Element(atom_type)
-            f0 = np.array(
-                [element.it92.calculate_sf(dr2 / 4.0) for dr2 in self.dr2asu_array]
-            )
-            if self.anomalous:
-                fp, fpp = gemmi.cromer_liberman(
-                    z=element.atomic_number, energy=gemmi.hc / self.wavelength
+            if self.mode == "xray":
+                f0 = np.array(
+                    [element.it92.calculate_sf(dr2 / 4.0) for dr2 in self.dr2asu_array]
                 )
-                self.full_atomic_sf_asu[atom_type] = f0 + fp + 1j * fpp
-            else:
+                if self.anomalous:
+                    fp, fpp = gemmi.cromer_liberman(
+                        z=element.atomic_number, energy=gemmi.hc / self.wavelength
+                    )
+                    self.full_atomic_sf_asu[atom_type] = f0 + fp + 1j * fpp
+                else:
+                    self.full_atomic_sf_asu[atom_type] = f0
+            elif self.mode == "cryoem":
+                f0 = np.array(
+                    [element.c4322.calculate_sf(dr2 / 4.0) for dr2 in self.dr2asu_array]
+                )
                 self.full_atomic_sf_asu[atom_type] = f0
 
         if self.anomalous:
