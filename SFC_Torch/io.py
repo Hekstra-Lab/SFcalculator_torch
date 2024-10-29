@@ -100,6 +100,7 @@ def array2hier(
 
     new_structure = gemmi.Structure()
     new_structure.add_model(new_model)
+    new_structure.setup_entities()
     return new_structure
 
 
