@@ -337,6 +337,12 @@ class SFcalculator(object):
         except:
             raise ValueError(f"{expcolumns} columns not included in the mtz file!")
         
+        # Make sure no systematic absent indices are included, and map to asu
+        if rs.utils.is_absent(mtz_reference.get_hkls(), mtz_reference.spacegroup).sum() > 0:
+            mtz_reference = mtz_reference[~rs.utils.is_absent(mtz_reference.get_hkls(), mtz_reference.spacegroup)]
+            print("Found systematic absent indices in the mtz, already dropped!", flush=True)
+        mtz_reference.hkl_to_asu(inplace=True, anomalous=self.anomalous)
+        
         if self.anomalous:
             # Try to get the wavelength from MTZ file
             try:
