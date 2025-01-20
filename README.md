@@ -16,11 +16,16 @@ To install this package:
     pip install SFcalculator-torch
     ```
  
-### Citation
+### Citing
 
-We are in the process of writing a paper about this work, if you are interested in using the tool, please contact the authors for a discussion at the first place
-
-Minhuan Li, minhuanli@g.harvard.edu
-
-Doeke Hekstra, doeke_hekstra@harvard.edu
+```
+@article{li2025sfcalculator,
+  title={SFCalculator: connecting deep generative models and crystallography},
+  author={Li, Minhuan and Dalton, Kevin M and Hekstra, Doeke Romke},
+  journal={bioRxiv},
+  pages={2025--01},
+  year={2025},
+  publisher={Cold Spring Harbor Laboratory}
+}
+```
 
