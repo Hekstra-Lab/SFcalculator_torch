@@ -8,7 +8,7 @@ def getVersionNumber():
 
 __version__ = getVersionNumber()
 
-setup(name="SFcalculator_torch",
+setup(name="sfcalculator_torch",
     version=__version__,
     author="Minhaun Li",
     license="MIT",
