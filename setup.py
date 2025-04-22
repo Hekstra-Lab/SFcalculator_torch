@@ -24,6 +24,7 @@ setup(name="sfcalculator_torch",
         "numpy<2.0.0",
         "tqdm",
     ],
-    setup_requires=["pytest-runner"],
-    tests_require=["pytest", "pytest-cov"],
+    extras_require={
+        "test": ["pytest", "pytest-cov"]
+    },
 )
