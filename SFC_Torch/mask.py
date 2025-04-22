@@ -36,7 +36,6 @@ def reciprocal_grid(Hp1_array, Fp1_tensor, gridsize, batchsize=None):
         grid[tuple_index] = Fp1_tensor
         return grid
 
-
 def rsgrid2realmask(rs_grid, solvent_percent=0.50, exponent=50.0, Batch=False):
     """
     Convert reciprocal space grid to real space solvent mask grid, in a
@@ -58,12 +57,25 @@ def rsgrid2realmask(rs_grid, solvent_percent=0.50, exponent=50.0, Batch=False):
     torch.float32 tensor
     The solvent mask grid in real space, solvent voxels have value close to 1, while protein voxels have value close to 0.
     """
+    SAMPLE_SIZE = 5_000_000
     real_grid = torch.real(torch.fft.fftn(rs_grid, dim=(-3, -2, -1)))
     real_grid_norm = (real_grid - torch.mean(real_grid)) / torch.std(real_grid)
     if Batch:
-        CUTOFF = torch.quantile(real_grid_norm[0], solvent_percent)
+        num_elements = real_grid_norm[0].numel()
+        if num_elements > SAMPLE_SIZE:
+            indices = torch.randperm(num_elements, device=real_grid_norm.device)[:SAMPLE_SIZE]
+            sample = real_grid_norm[0].flatten()[indices].float()
+            CUTOFF = torch.quantile(sample, solvent_percent)
+        else:
+            CUTOFF = torch.quantile(real_grid_norm[0].flatten(), solvent_percent)
     else:
-        CUTOFF = torch.quantile(real_grid_norm, solvent_percent)
+        num_elements = real_grid_norm.numel()
+        if num_elements > SAMPLE_SIZE:
+            indices = torch.randperm(num_elements, device=real_grid_norm.device)[:SAMPLE_SIZE]
+            sample = real_grid_norm.flatten()[indices].float()
+            CUTOFF = torch.quantile(sample, solvent_percent)
+        else:
+            CUTOFF = torch.quantile(real_grid_norm.flatten(), solvent_percent)
     real_grid_mask = torch.sigmoid((CUTOFF - real_grid_norm) * exponent)
     return real_grid_mask
 
