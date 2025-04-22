@@ -8,7 +8,7 @@ def getVersionNumber():
 
 __version__ = getVersionNumber()
 
-setup(name="SFcalculator_torch",
+setup(name="sfcalculator_torch",
     version=__version__,
     author="Minhaun Li",
     license="MIT",
@@ -24,6 +24,7 @@ setup(name="SFcalculator_torch",
         "numpy<2.0.0",
         "tqdm",
     ],
-    setup_requires=["pytest-runner"],
-    tests_require=["pytest", "pytest-cov"],
+    extras_require={
+        "test": ["pytest", "pytest-cov"]
+    },
 )

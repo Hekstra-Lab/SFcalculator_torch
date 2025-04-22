@@ -16,11 +16,13 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install packaging setuptools twine wheel
+        pip install build packaging setuptools twine wheel
+    - name: Build package
+      run: |
+        python -m build
     - name: Publish the Python package
       env:
         TWINE_USERNAME: __token__
         TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
       run: |
-        python setup.py sdist bdist_wheel
         twine upload dist/*
