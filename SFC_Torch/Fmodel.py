@@ -383,9 +383,13 @@ class SFcalculator(object):
             self.dHKL = self.dHKL[resol_bool]
             self.HKL_array = self.HKL_array[resol_bool] 
             
-        self.Hasu_array = generate_reciprocal_asu(
-            self.unit_cell, self.space_group, self.dmin, anomalous=self.anomalous
-        )
+        if self.mode == 'cryoem':
+            # override the asu settings for cryoem cases, issue #10
+            self.Hasu_array = self.HKL_array.copy()
+        else:
+            self.Hasu_array = generate_reciprocal_asu(
+                self.unit_cell, self.space_group, self.dmin, anomalous=self.anomalous
+            )
         assert (
             diff_array(self.HKL_array, self.Hasu_array) == set()
         ), "HKL_array should be equal or subset of the Hasu_array!"
