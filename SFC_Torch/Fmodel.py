@@ -17,6 +17,7 @@ import time
 import numpy as np
 import torch
 import reciprocalspaceship as rs
+from loguru import logger
 
 from .symmetry import generate_reciprocal_asu, expand_to_p1
 from .mask import reciprocal_grid, rsgrid2realmask, realmask2Fmask
@@ -143,7 +144,7 @@ class SFcalculator(object):
                 else:
                     self.wavelength = pdb_wavelength
             except:
-                print(
+                logger.warning(
                     "Can't find wavelength record in the PDB file, or it doesn't match your input wavelength!"
                 )
 
@@ -340,7 +341,7 @@ class SFcalculator(object):
         # Make sure no systematic absent indices are included, and map to asu
         if rs.utils.is_absent(mtz_reference.get_hkls(), mtz_reference.spacegroup).sum() > 0:
             mtz_reference = mtz_reference[~rs.utils.is_absent(mtz_reference.get_hkls(), mtz_reference.spacegroup)]
-            print("Found systematic absent indices in the mtz, already dropped!", flush=True)
+            logger.info("Found systematic absent indices in the mtz, already dropped!")
         mtz_reference.hkl_to_asu(inplace=True, anomalous=self.anomalous)
         
         if self.anomalous:
@@ -353,20 +354,20 @@ class SFcalculator(object):
                 else:
                     self.wavelength = mtz_wavelength
             except:
-                print(
+                logger.warning(
                     "Can't find wavelength record in the MTZ file, or it doesn't match with other sources"
                 )
 
         if (mtz_reference.cell == self._pdb.cell):
             pass
         else:
-            print("Unit cell from mtz file does not match that in PDB file! Using the cell info from MTZ file!")
+            logger.warning("Unit cell from mtz file does not match that in PDB file! Using the cell info from MTZ file!")
             self._pdb.set_unitcell(mtz_reference.cell)
 
         if (mtz_reference.spacegroup.hm == self._pdb.spacegroup.hm):
             pass
         else:
-            print("Space group from mtz file does not match that in PDB file! Using the spacegroup from MTZ file!")  # type: ignore
+            logger.warning("Space group from mtz file does not match that in PDB file! Using the spacegroup from MTZ file!")  # type: ignore
             self._pdb.set_spacegroup(mtz_reference.spacegroup)
 
         # HKL array from the reference mtz file, [N,3]
@@ -421,9 +422,9 @@ class SFcalculator(object):
             ).type(torch.float32)
             nonpositive_Fo = assert_numpy(self.Fo <= 0.0)
             if nonpositive_Fo.sum() > 0:
-                print(f"With {nonpositive_Fo.sum()} non-positive experimental magnitudes! Will be treated as outliers.")
+                logger.info(f"With {nonpositive_Fo.sum()} non-positive experimental magnitudes! Will be treated as outliers.")
         except:
-            print(f"MTZ file doesn't contain {expcolumns[0]} or {expcolumns[1]}! Check your data!")
+            logger.warning(f"MTZ file doesn't contain {expcolumns[0]} or {expcolumns[1]}! Check your data!")
 
         try:
             self.free_flag = np.where(
@@ -431,7 +432,7 @@ class SFcalculator(object):
             )
         except:
             self.free_flag = np.zeros(len(self.Fo)).astype(bool) 
-            print("No Free Flag Column, will treat all elements as working set! Check your data!")
+            logger.warning("No Free Flag Column, will treat all elements as working set! Check your data!")
 
         # label outliers
         # Detecting outliers in non-redundant diffraction data, Read, 1999
@@ -463,7 +464,7 @@ class SFcalculator(object):
             ).to_numpy(dtype=bool)
         except:
             self.Outlier = np.zeros(len(self.Fo)).astype(bool)
-            print("No outlier detection, will use all reflections!")
+            logger.info("No outlier detection, will use all reflections!")
         self.Outlier = self.Outlier | nonpositive_Fo 
     
     def init_withoutmtz(self, dmin, n_bins):
@@ -610,8 +611,8 @@ class SFcalculator(object):
             mtz.set_data(self.Hasu_array)
         self.gridsize = mtz.get_size_for_hkl(sample_rate=3.0)
         if verbose:
-            print("Solvent Percentage:", self.solventpct)
-            print("Grid size:", self.gridsize)
+            logger.info("Solvent Percentage:", self.solventpct)
+            logger.info("Grid size:", self.gridsize)
         self.inspected = True
 
     def calc_fprotein(
@@ -949,10 +950,9 @@ class SFcalculator(object):
             )
             str_ = f"Time: {time.time()-start_time:.3f}"
             if verbose:
-                print(
+                logger.info(
                     f"Scale, {loss_track[-1][0]:.3f}, {loss_track[-1][1]:.3f}, {loss_track[-1][2]:.3f}",
                     str_,
-                    flush=True,
                 )
         self.r_work, self.r_free = r_work, r_free
         if return_loss:
@@ -998,10 +998,9 @@ class SFcalculator(object):
             )
             str_ = f"Time: {time.time()-start_time:.3f}"
             if verbose:
-                print(
+                logger.info(
                     f"Scale, {loss_track[-1][0]:.3f}, {loss_track[-1][1]:.3f}, {loss_track[-1][2]:.3f}",
                     str_,
-                    flush=True,
                 )
         self.r_work, self.r_free = r_work, r_free
         if return_loss:
@@ -1080,7 +1079,7 @@ class SFcalculator(object):
                 time_this_round = round(time.time() - start_time, 3)
                 str_ = "Time: " + str(time_this_round)
                 if verbose:
-                    print("Scale", *[assert_numpy(i) for i in temp], str_, flush=True)
+                    logger.info("Scale", *[assert_numpy(i) for i in temp], str_)
 
         if initialize:
             self.init_scales(requires_grad=True)

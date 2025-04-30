@@ -6,6 +6,7 @@ import urllib.request, os
 import numpy as np
 from tqdm import tqdm
 import pandas as pd
+from loguru import logger
 
 from .utils import assert_numpy
 
@@ -141,7 +142,7 @@ class PDBParser(object):
             self.spacegroup = gemmi.SpaceGroup(structure.spacegroup_hm)
         except:
             self.spacegroup = gemmi.SpaceGroup("P 1")
-            print("No valid spacegroup in the file, set as P 1", flush=True)
+            logger.info("No valid spacegroup in the file, set as P 1", flush=True)
         self.cell = structure.cell
 
         # Save the pdb headers, exclude the CRYST1 line
@@ -414,10 +415,10 @@ def fetch_pdb(idlist, outpath):
         reflection_path = os.path.join(outpath, 'reflections/')
         for folder in [sequence_path, model_path, mmcif_path, sfcif_path, reflection_path]:
             if os.path.exists(folder):
-                print(f"{folder:<80}" + f"{'already exists': >20}")
+                logger.info(f"{folder:<80}" + f"{'already exists': >20}")
             else:
                 os.makedirs(folder)
-                print(f"{folder:<80}" + f"{'created': >20}")
+                logger.info(f"{folder:<80}" + f"{'created': >20}")
     else:
         sequence_path = outpath
         model_path = outpath
