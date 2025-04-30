@@ -23,6 +23,7 @@ setup(name="sfcalculator_torch",
         "reciprocalspaceship>=0.9.18",
         "numpy<2.0.0",
         "tqdm",
+        "loguru",
     ],
     extras_require={
         "test": ["pytest", "pytest-cov"]
