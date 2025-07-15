@@ -611,8 +611,8 @@ class SFcalculator(object):
             mtz.set_data(self.Hasu_array)
         self.gridsize = mtz.get_size_for_hkl(sample_rate=3.0)
         if verbose:
-            logger.info("Solvent Percentage:", self.solventpct)
-            logger.info("Grid size:", self.gridsize)
+            print("Solvent Percentage:", self.solventpct)
+            print("Grid size:", self.gridsize)
         self.inspected = True
 
     def calc_fprotein(
