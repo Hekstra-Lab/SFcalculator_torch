@@ -414,10 +414,21 @@ class SFcalculator(object):
             resol_bool = np.ones_like(self.dHKL, dtype=bool)
         exp_mtz = exp_mtz[resol_bool].copy()
         
-        if isinstance(exp_mtz[expcolumns[0]].dtype, rs.IntensityDtype) or isinstance(exp_mtz[expcolumns[0]].dtype, rs.FriedelIntensityDtype):
+        if isinstance(exp_mtz[expcolumns[0]].dtype, rs.IntensityDtype):
             raise ValueError(
-                f"Experimental data {expcolumns[0]} should be Structure Factor Magnitude, not Intensity! Convert it to Structure Factor Magnitude first!"
+                f"Experimental data {expcolumns[0]} should be Structure Factor Amplitude, not Intensity! Convert it to Structure Factor Amplitude first!"
             )
+        
+        if isinstance(exp_mtz[expcolumns[0]].dtype, rs.FriedelIntensityDtype):
+            raise ValueError(
+                f"Experimental data {expcolumns[0]} should be Structure Factor Amplitude, not Friedel Intensity! Convert it to Friedel Structure Factor Amplitude and run stack_anomalous first!"
+            )
+
+        if isinstance(exp_mtz[expcolumns[0]].dtype, rs.FriedelStructureFactorAmplitudeDtype):
+            raise ValueError(
+                f"Experimental data {expcolumns[0]} should be Structure Factor Amplitude, not Friedel Structure Factor Amplitude! Try to run stack_anomalous first!"
+            )
+        
         try:
             self.Fo = torch.tensor(exp_mtz[expcolumns[0]].to_numpy(), device=self.device).type(
                 torch.float32
