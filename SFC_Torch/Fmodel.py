@@ -413,6 +413,11 @@ class SFcalculator(object):
         if resol_bool is None:
             resol_bool = np.ones_like(self.dHKL, dtype=bool)
         exp_mtz = exp_mtz[resol_bool].copy()
+        
+        if isinstance(exp_mtz[expcolumns[0]].dtype, rs.IntensityDtype) or isinstance(exp_mtz[expcolumns[0]].dtype, rs.FriedelIntensityDtype):
+            raise ValueError(
+                f"Experimental data {expcolumns[0]} should be Structure Factor Magnitude, not Intensity! Convert it to Structure Factor Magnitude first!"
+            )
         try:
             self.Fo = torch.tensor(exp_mtz[expcolumns[0]].to_numpy(), device=self.device).type(
                 torch.float32
