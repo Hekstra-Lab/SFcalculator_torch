@@ -7,10 +7,7 @@ __pycache__/
 *$py.class
 
 # Ignore everything in the 'doc' directory
-doc/
-
-# But un-ignore all .html files inside 'doc' and its subdirectories
-!doc/**/*.html
+docs/*.ipynb
 
 # C extensions
 *.so
