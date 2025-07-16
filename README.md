@@ -1,7 +1,11 @@
 # SFcalculator_torch
+![licence](https://img.shields.io/github/license/Hekstra-Lab/SFcalculator_torch)
 ![Build](https://github.com/Hekstra-Lab/SFcalculator_torch/workflows/Build/badge.svg)
 [![codecov](https://codecov.io/github/Hekstra-Lab/SFcalculator_torch/branch/master/graph/badge.svg?token=02GUPGPUC1)](https://codecov.io/github/Hekstra-Lab/SFcalculator_torch)
 [![PyPI](https://img.shields.io/pypi/v/SFcalculator-torch?color=blue)](https://pypi.org/project/SFcalculator-torch/)
+[![Tutorial](https://img.shields.io/badge/Page-Tutorial-violet)](https://hekstra-lab.github.io/SFcalculator_torch/)
+[![BioRXiv](https://img.shields.io/badge/BioRXiv-10.1101%2F2025.01.12.632630v2-b31b1b?)](https://www.biorxiv.org/content/10.1101/2025.01.12.632630v2)
+
 
 A pytorch implementation of `SFcalculator`. See the [main page](https://github.com/Hekstra-Lab/SFcalculator) for more information.
 
@@ -16,6 +20,8 @@ To install this package:
     pip install SFcalculator-torch
     ```
  
+For a walkthrough tutorial, check this page: https://hekstra-lab.github.io/SFcalculator_torch/
+
 ### Citing
 
 ```
